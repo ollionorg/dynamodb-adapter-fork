@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"regexp"
@@ -733,7 +734,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 			return true
 		}
 		_, ok := rowMap[colName]
-		return !ok 
+		return !ok
 	}
 	if strings.HasPrefix(conditionalExpression, "attribute_exists") || strings.HasPrefix(conditionalExpression, "if_exists") {
 		if len(rowMap) == 0 {
@@ -745,7 +746,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 	return rowMap[conditionalExpression]
 }
 
-//parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
+// parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
 func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, error) {
 	singleRow := make(map[string]interface{})
 	if r == nil {
@@ -883,6 +884,27 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			if !s.IsNull() {
 				singleRow[k] = s.Bool
 			}
+		case "ARRAY<STRING(MAX)>":
+			var s []spanner.NullString
+			err := r.Column(i, &s)
+			if err != nil {
+				if strings.Contains(err.Error(), "ambiguous column name") {
+					continue
+				}
+				return nil, errors.New("ValidationException", err, k)
+
+			}
+			var temp []string
+			for _, val := range s {
+				temp = append(temp, val.StringVal)
+			}
+			if len(s) > 0 {
+				singleRow[k] = temp
+			}
+			fmt.Println("inside case ARRAY<STRING(MAX)>:")
+		default:
+			fmt.Println("inside default")
+			fmt.Println(v)
 		}
 	}
 	return singleRow, nil

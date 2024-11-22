@@ -423,6 +423,7 @@ func ChangeResponseToOriginalColumns(tableName string, obj map[string]interface{
 	if !ok {
 		return obj
 	}
+	fmt.Println("ChangeResponseToOriginalColumns map obj--> ", obj)
 	rs := make(map[string]interface{})
 	logger.LogInfo(models.ColumnToOriginalCol)
 	for k, v := range obj {
@@ -432,7 +433,7 @@ func ChangeResponseToOriginalColumns(tableName string, obj map[string]interface{
 			rs[k] = v
 		}
 	}
-
+	fmt.Println("ChangeResponseToOriginalColumns --> ", rs)
 	return rs
 }
 
@@ -454,7 +455,6 @@ func ChangeResponseColumn(obj map[string]interface{}) map[string]interface{} {
 // ChangeColumnToSpanner converts original column name to  spanner supported column names
 func ChangeColumnToSpanner(obj map[string]interface{}) map[string]interface{} {
 	rs := make(map[string]interface{})
-	
 	for k, v := range obj {
 
 		if k1, ok := models.ColumnToOriginalCol[k]; ok {
@@ -631,11 +631,12 @@ func ChangeQueryResponseColumn(tableName string, obj map[string]interface{}) map
 	return obj
 }
 
-//ChangeMaptoDynamoMap converts simple map into dynamo map
+// ChangeMaptoDynamoMap converts simple map into dynamo map
 func ChangeMaptoDynamoMap(in interface{}) (map[string]interface{}, error) {
 	if in == nil {
 		return nil, nil
 	}
+	fmt.Println("ChangeMaptoDynamoMap --> ", in)
 	outputObject := make(map[string]interface{})
 	err := convertMapToDynamoObject(outputObject, reflect.ValueOf(in))
 	return outputObject, err
@@ -699,6 +700,20 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 			return nil
 		}
 		output["B"] = append([]byte{}, b...)
+	case reflect.String:
+		listVal := make([]map[string]interface{}, 0, v.Len())
+
+		count := 0
+		for i := 0; i < v.Len(); i++ {
+			elem := make(map[string]interface{})
+			err := convertMapToDynamoObject(elem, v.Index(i))
+			if err != nil {
+				return err
+			}
+			listVal = append(listVal, elem)
+			count++
+		}
+		output["SS"] = listVal
 	default:
 		listVal := make([]map[string]interface{}, 0, v.Len())
 

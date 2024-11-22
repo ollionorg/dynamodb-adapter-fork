@@ -10,7 +10,7 @@
             "ColDate": "S",
             "ColTimestamp": "S"
         },
-        "indices": { 
+        "indices": {
 			"indexName1": {
 				"sortKey": "sort key for indexName1",
 				"partitionKey": "partition key for indexName1"
