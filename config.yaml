@@ -1,0 +1,4 @@
+spanner:
+  project_id: "your-project-id"
+  instance_id: "your-instance-id"
+  database_name: "your-database-name"

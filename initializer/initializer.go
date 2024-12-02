@@ -27,7 +27,7 @@ import (
 // InitAll - this will initialize all the project object
 // Config, storage and all other global objects are initialize
 func InitAll(box *rice.Box) error {
-	config.InitConfig(box)
+	config.InitConfig()
 	storage.InitializeDriver()
 	err := spanner.ParseDDL(true)
 	if err != nil {
