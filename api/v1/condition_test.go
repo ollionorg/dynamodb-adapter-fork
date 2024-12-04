@@ -327,11 +327,13 @@ func TestConvertDynamoToMap(t *testing.T) {
 				"address":    {S: aws.String("Ney York")},
 				"first_name": {S: aws.String("Catalina")},
 				"last_name":  {S: aws.String("Smith")},
+				"titles":     {SS: aws.StringSlice([]string{"Mr", "Dr"})},
 			},
 			map[string]interface{}{
 				"address":    "Ney York",
 				"first_name": "Catalina",
 				"last_name":  "Smith",
+				"titles":     []string{"Mr", "Dr"},
 			},
 		},
 		{

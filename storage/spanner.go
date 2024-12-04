@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"regexp"
@@ -612,7 +613,6 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 			m[k] = ba
 		}
 	}
-
 	mutation := spanner.InsertOrUpdateMap(table, m)
 	mutations := []*spanner.Mutation{mutation}
 	err := t.BufferWrite(mutations)
@@ -733,7 +733,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 			return true
 		}
 		_, ok := rowMap[colName]
-		return !ok 
+		return !ok
 	}
 	if strings.HasPrefix(conditionalExpression, "attribute_exists") || strings.HasPrefix(conditionalExpression, "if_exists") {
 		if len(rowMap) == 0 {
@@ -745,7 +745,6 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 	return rowMap[conditionalExpression]
 }
 
-//parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
 func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, error) {
 	singleRow := make(map[string]interface{})
 	if r == nil {
@@ -759,133 +758,157 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 		}
 		v, ok := colDDL[k]
 		if !ok {
+			fmt.Println(k)
 			return nil, errors.New("ResourceNotFoundException", k)
 		}
+
+		var err error
 		switch v {
 		case "STRING(MAX)":
-			var s spanner.NullString
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.StringVal
-			}
+			err = parseStringColumn(r, i, k, singleRow)
 		case "BYTES(MAX)":
-			var s []byte
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if len(s) > 0 {
-				var m interface{}
-				err := json.Unmarshal(s, &m)
-				if err != nil {
-					logger.LogError(err, string(s))
-					singleRow[k] = string(s)
-					continue
-				}
-				val1, ok := m.(string)
-				if ok {
-					if base64Regexp.MatchString(val1) {
-						ba, err := base64.StdEncoding.DecodeString(val1)
-						if err == nil {
-							var sample interface{}
-							err = json.Unmarshal(ba, &sample)
-							if err == nil {
-								singleRow[k] = sample
-								continue
-							} else {
-								singleRow[k] = string(s)
-								continue
-							}
-						}
-					}
-				}
-
-				if mp, ok := m.(map[string]interface{}); ok {
-					for k, v := range mp {
-						if val, ok := v.(string); ok {
-							if base64Regexp.MatchString(val) {
-								ba, err := base64.StdEncoding.DecodeString(val)
-								if err == nil {
-									var sample interface{}
-									err = json.Unmarshal(ba, &sample)
-									if err == nil {
-										mp[k] = sample
-										m = mp
-									}
-								}
-							}
-						}
-					}
-				}
-				singleRow[k] = m
-			}
+			err = parseBytesColumn(r, i, k, singleRow)
 		case "INT64":
-			var s spanner.NullInt64
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.Int64
-			}
+			err = parseInt64Column(r, i, k, singleRow)
 		case "FLOAT64":
-			var s spanner.NullFloat64
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.Float64
-			}
+			err = parseFloat64Column(r, i, k, singleRow)
 		case "NUMERIC":
-			var s spanner.NullNumeric
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if !s.IsNull() {
-				if s.Numeric.IsInt() {
-					tmp, _ := s.Numeric.Float64()
-					singleRow[k] = int64(tmp)
-				} else {
-					singleRow[k], _ = s.Numeric.Float64()
-				}
-			}
+			err = parseNumericColumn(r, i, k, singleRow)
 		case "BOOL":
-			var s spanner.NullBool
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
+			err = parseBoolColumn(r, i, k, singleRow)
+		case "ARRAY<STRING(MAX)>":
+			err = parseStringArrayColumn(r, i, k, singleRow)
+		}
 
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.Bool
-			}
+		if err != nil {
+			return nil, errors.New("ValidationException", err, k)
 		}
 	}
 	return singleRow, nil
+}
+
+func parseStringColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s spanner.NullString
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if !s.IsNull() {
+		row[col] = s.StringVal
+	}
+	return nil
+}
+
+func parseBytesColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s []byte
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if len(s) > 0 {
+		var m interface{}
+		if err := json.Unmarshal(s, &m); err != nil {
+			logger.LogError(err, string(s))
+			row[col] = string(s)
+			return nil
+		}
+		m = processDecodedData(m)
+		row[col] = m
+	}
+	return nil
+}
+
+func parseInt64Column(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s spanner.NullInt64
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if !s.IsNull() {
+		row[col] = s.Int64
+	}
+	return nil
+}
+
+func parseFloat64Column(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s spanner.NullFloat64
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if !s.IsNull() {
+		row[col] = s.Float64
+	}
+	return nil
+}
+
+func parseNumericColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s spanner.NullNumeric
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if !s.IsNull() {
+		val, _ := s.Numeric.Float64()
+		if s.Numeric.IsInt() {
+			row[col] = int64(val)
+		} else {
+			row[col] = val
+		}
+	}
+	return nil
+}
+
+func parseBoolColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s spanner.NullBool
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if !s.IsNull() {
+		row[col] = s.Bool
+	}
+	return nil
+}
+
+func parseStringArrayColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s []spanner.NullString
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	var temp []string
+	for _, val := range s {
+		temp = append(temp, val.StringVal)
+	}
+	if len(s) > 0 {
+		row[col] = temp
+	}
+	return nil
+}
+
+func processDecodedData(m interface{}) interface{} {
+	if val, ok := m.(string); ok && base64Regexp.MatchString(val) {
+		if ba, err := base64.StdEncoding.DecodeString(val); err == nil {
+			var sample interface{}
+			if err := json.Unmarshal(ba, &sample); err == nil {
+				return sample
+			}
+		}
+	}
+	if mp, ok := m.(map[string]interface{}); ok {
+		for k, v := range mp {
+			if val, ok := v.(string); ok && base64Regexp.MatchString(val) {
+				if ba, err := base64.StdEncoding.DecodeString(val); err == nil {
+					var sample interface{}
+					if err := json.Unmarshal(ba, &sample); err == nil {
+						mp[k] = sample
+					}
+				}
+			}
+		}
+	}
+	return m
 }
 
 func checkInifinty(value float64, logData interface{}) error {
