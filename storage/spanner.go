@@ -767,7 +767,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			return nil, errors.New("ResourceNotFoundException", k)
 		}
 		switch v {
-		case "STRING(MAX)":
+		case "S":
 			var s spanner.NullString
 			err := r.Column(i, &s)
 			if err != nil {
@@ -833,7 +833,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				}
 				singleRow[k] = m
 			}
-		case "INT64":
+		case "N":
 			var s spanner.NullInt64
 			err := r.Column(i, &s)
 			if err != nil {

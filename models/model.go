@@ -26,6 +26,7 @@ type SpannerConfig struct {
 	ProjectID    string `yaml:"project_id"`
 	InstanceID   string `yaml:"instance_id"`
 	DatabaseName string `yaml:"database_name"`
+	QueryLimit   int64  `yaml:"query_limit"`
 }
 
 type Config struct {
@@ -222,7 +223,7 @@ var OriginalColResponse map[string]string
 
 func init() {
 	TableDDL = make(map[string]map[string]string)
-	TableDDL["dynamodb_adapter_table_ddl"] = map[string]string{"tableName": "STRING(MAX)", "column": "STRING(MAX)", "dataType": "STRING(MAX)", "originalColumn": "STRING(MAX)", "partitionKey": "STRING(MAX)", "sortKey": "STRING(MAX)", "spannerIndexName": "STRING(MAX)", "actualTable": "STRING(MAX)"}
+	TableDDL["dynamodb_adapter_table_ddl"] = map[string]string{"tableName": "S", "column": "S", "dataType": "S", "originalColumn": "S", "partitionKey": "S", "sortKey": "S", "spannerIndexName": "S", "actualTable": "S"}
 	TableDDL["dynamodb_adapter_config_manager"] = map[string]string{"tableName": "STRING(MAX)", "config": "STRING(MAX)", "cronTime": "STRING(MAX)", "uniqueValue": "STRING(MAX)", "enabledStream": "STRING(MAX)", "pubsubTopic": "STRING(MAX)"}
 	TableColumnMap = make(map[string][]string)
 	TableColumnMap["dynamodb_adapter_table_ddl"] = []string{"tableName", "column", "dataType", "originalColumn", "partitionKey", "sortKey", "spannerIndexName", "actualTable"}
