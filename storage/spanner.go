@@ -778,6 +778,8 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			err = parseBoolColumn(r, i, k, singleRow)
 		case "ARRAY<STRING(MAX)>":
 			err = parseStringArrayColumn(r, i, k, singleRow)
+		default:
+			return nil, errors.New("TypeNotFound", err, k)
 		}
 
 		if err != nil {

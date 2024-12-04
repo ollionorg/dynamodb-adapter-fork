@@ -38,6 +38,8 @@ func Test_parseRow(t *testing.T) {
 			{StringVal: "element3", Valid: true},
 		},
 	})
+	invalidTypeRow, _ := spanner.NewRow([]string{"strCol"}, []interface{}{1234}) // Invalid data type
+	missingColumnRow, _ := spanner.NewRow([]string{"missingCol"}, []interface{}{"value"})
 
 	type args struct {
 		r      *spanner.Row
@@ -108,6 +110,24 @@ func Test_parseRow(t *testing.T) {
 			args{simpleArrayRow, map[string]string{"arrayCol": "ARRAY<STRING(MAX)>"}},
 			map[string]interface{}{"arrayCol": []string{"element1", "element2", "element3"}},
 			false,
+		},
+		{
+			"MissingColumnTypeInDDL",
+			args{simpleStringRow, map[string]string{"strCol": ""}}, // Missing type in DDL
+			nil,
+			true,
+		},
+		{
+			"InvalidTypeConversion",
+			args{invalidTypeRow, map[string]string{"strCol": "STRING(MAX)"}}, // Incorrectly trying to parse an int as a string
+			nil,
+			true,
+		},
+		{
+			"ColumnNotInDDL",
+			args{missingColumnRow, map[string]string{"strCol": "STRING(MAX)"}}, // Column not defined in DDL
+			nil,
+			true,
 		},
 	}
 	for _, tt := range tests {
