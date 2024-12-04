@@ -404,11 +404,7 @@ func TestChangeMaptoDynamoMap(t *testing.T) {
 				"age":     map[string]interface{}{"N": "20"},
 				"value":   map[string]interface{}{"N": "10"},
 				"array": map[string]interface{}{
-					"L": []map[string]interface{}{
-						{"S": "first"},
-						{"S": "second"},
-						{"S": "third"},
-					},
+					"SS": []string{"first", "second", "third"},
 				},
 			},
 		},
