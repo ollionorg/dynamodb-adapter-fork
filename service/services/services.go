@@ -19,6 +19,7 @@ package services
 import (
 	"context"
 	"hash/fnv"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -82,7 +83,6 @@ func Put(ctx context.Context, tableName string, putObj map[string]interface{}, e
 	for k, v := range newResp {
 		updateResp[k] = v
 	}
-
 	return updateResp, nil
 }
 
@@ -570,7 +570,7 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 	if err != nil {
 		return nil, err
 	}
-	err = storage.GetStorageInstance().SpannerRemove(ctx, tableName, updateAttr.PrimaryKeyMap, e, expr, colsToRemove)
+	err = storage.GetStorageInstance().SpannerRemove(ctx, tableName, updateAttr.PrimaryKeyMap, e, expr, colsToRemove, oldRes)
 	if err != nil {
 		return nil, err
 	}
@@ -581,9 +581,50 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 	for k, v := range oldRes {
 		updateResp[k] = v
 	}
-
-	for i := 0; i < len(colsToRemove); i++ {
-		delete(updateResp, colsToRemove[i])
+	for _, target := range colsToRemove {
+		if strings.Contains(target, "[") && strings.Contains(target, "]") {
+			// Handle list index removal
+			listAttr, idx := parseListRemoveTarget(target)
+			if list, ok := oldRes[listAttr].([]interface{}); ok {
+				oldRes[listAttr] = removeListElement(list, idx)
+			}
+		} else if strings.Contains(target, ".") {
+			// Handle map key removal
+			mapAttr, key := parseMapRemoveTarget(target)
+			if m, ok := oldRes[mapAttr].(map[string]interface{}); ok {
+				delete(m, key)
+				oldRes[mapAttr] = m
+			}
+		} else {
+			// Handle direct column removal
+			delete(updateResp, target)
+		}
 	}
 	return updateResp, nil
+}
+
+func parseListRemoveTarget(target string) (string, int) {
+	// Example: listAttribute[2]
+	re := regexp.MustCompile(`(.*)\[(\d+)\]`)
+	matches := re.FindStringSubmatch(target)
+	if len(matches) == 3 {
+		index, _ := strconv.Atoi(matches[2])
+		return matches[1], index
+	}
+	return target, -1
+}
+
+func parseMapRemoveTarget(target string) (string, string) {
+	// Example: mapAttribute.key
+	parts := strings.SplitN(target, ".", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return target, ""
+}
+func removeListElement(list []interface{}, idx int) []interface{} {
+	if idx < 0 || idx >= len(list) {
+		return list // Invalid index; return original list
+	}
+	return append(list[:idx], list[idx+1:]...)
 }

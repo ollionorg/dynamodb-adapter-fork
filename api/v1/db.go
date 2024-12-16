@@ -17,6 +17,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -59,7 +60,7 @@ func RouteRequest(c *gin.Context) {
 	case "UpdateItem":
 		Update(c)
 	default:
-		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of" + amzTarget).
+		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of"+amzTarget).
 			HTTPResponse("X-Amz-Target Header not supported"))
 	}
 }
@@ -506,7 +507,10 @@ func Scan(c *gin.Context) {
 					c.JSON(errors.HTTPResponse(err, "LastEvaluatedKeyChangeError"))
 				}
 			}
-			c.JSON(http.StatusOK, res)
+			jsonData, err := json.Marshal(res)
+			if err != nil {
+			}
+			c.JSON(http.StatusOK, json.RawMessage(jsonData))
 		} else {
 			c.JSON(errors.HTTPResponse(err, meta))
 		}

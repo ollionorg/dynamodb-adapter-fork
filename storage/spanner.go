@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"regexp"
@@ -155,7 +156,18 @@ func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]inte
 	_, err := s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
 		for k, v := range m {
-			tmpMap[k] = v
+			switch v := v.(type) {
+			case []interface{}:
+				// Serialize lists to JSON
+				jsonValue, err := json.Marshal(v)
+				if err != nil {
+					return fmt.Errorf("failed to serialize column %s to JSON: %v", k, err)
+				}
+				tmpMap[k] = string(jsonValue)
+			default:
+				// Assign other types as-is
+				tmpMap[k] = v
+			}
 		}
 		if len(eval.Attributes) > 0 || expr != nil {
 			status, err := evaluateConditionalExpression(ctx, t, table, tmpMap, eval, expr)
@@ -172,7 +184,6 @@ func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]inte
 		}
 		return s.performPutOperation(ctx, t, table, tmpMap)
 	})
-
 	return update, err
 }
 
@@ -301,12 +312,14 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 	} else {
 		key = spanner.Key{pValue}
 	}
+
 	updatedObj := map[string]interface{}{}
 	_, err = s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
 		for k, v := range m1 {
 			tmpMap[k] = v
 		}
+
 		if len(eval.Attributes) > 0 || expr != nil {
 			status, _ := evaluateConditionalExpression(ctx, t, table, tmpMap, eval, expr)
 			if !status {
@@ -323,11 +336,12 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return err
 		}
+
 		for k, v := range tmpMap {
-			v1, ok := rs[k]
-			if ok {
-				switch v1.(type) {
+			if existingVal, ok := rs[k]; ok {
+				switch existingVal := existingVal.(type) {
 				case int64:
+					// Handling int64
 					v2, ok := v.(float64)
 					if !ok {
 						strV, ok := v.(string)
@@ -338,17 +352,11 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 						if err != nil {
 							return errors.New("ValidationException", reflect.TypeOf(v).String())
 						}
-						err = checkInifinty(v2, strV)
-						if err != nil {
-							return err
-						}
 					}
-					tmpMap[k] = v1.(int64) + int64(v2)
-					err = checkInifinty(float64(m[k].(int64)), m)
-					if err != nil {
-						return err
-					}
+					tmpMap[k] = existingVal + int64(v2)
+
 				case float64:
+					// Handling float64
 					v2, ok := v.(float64)
 					if !ok {
 						strV, ok := v.(string)
@@ -359,52 +367,37 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 						if err != nil {
 							return errors.New("ValidationException", reflect.TypeOf(v).String())
 						}
-						err = checkInifinty(v2, strV)
-						if err != nil {
-							return err
-						}
 					}
-					tmpMap[k] = v1.(float64) + v2
-					err = checkInifinty(m[k].(float64), m)
-					if err != nil {
-						return err
-					}
+					tmpMap[k] = existingVal + v2
 
 				case []interface{}:
-					var ifaces1 []interface{}
-					ba, ok := v.([]byte)
-					if ok {
-						err = json.Unmarshal(ba, &ifaces1)
-						if err != nil {
-							logger.LogError(err, string(ba))
-						}
-					} else {
-						ifaces1 = v.([]interface{})
-					}
-					m1 := map[interface{}]struct{}{}
-					ifaces := v1.([]interface{})
-					for i := 0; i < len(ifaces); i++ {
-						m1[ifaces[i]] = struct{}{}
-					}
-					for i := 0; i < len(ifaces1); i++ {
-						m1[ifaces1[i]] = struct{}{}
-					}
-					ifaces = []interface{}{}
-					for k := range m1 {
-						ifaces = append(ifaces, k)
-					}
-					tmpMap[k] = ifaces
+					tmpMap[k] = mergeLists(existingVal, v)
+
+				case map[string]interface{}:
+					tmpMap[k] = mergeMaps(existingVal, v)
+
+				case models.StringSet:
+					tmpMap[k] = mergeStringSets(existingVal, v)
+
+				case models.NumberSet:
+					tmpMap[k] = mergeNumberSets(existingVal, v)
+
+				// case models.BinarySet:
+				// 	tmpMap[k] = mergeBinarySets(existingVal, v)
+
 				default:
 					logger.LogDebug(reflect.TypeOf(v).String())
 				}
 			}
 		}
+
+		// Add partition and sort keys to the updated object
 		tmpMap[pKey] = pValue
 		if sValue != nil {
 			tmpMap[sKey] = sValue
 		}
-		ddl := models.TableDDL[table]
 
+		ddl := models.TableDDL[table]
 		for k, v := range tmpMap {
 			updatedObj[k] = v
 			t, ok := ddl[k]
@@ -415,6 +408,18 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 				}
 				tmpMap[k] = ba
 			}
+			switch v := v.(type) {
+			case []interface{}:
+				// Serialize lists to JSON
+				jsonValue, err := json.Marshal(v)
+				if err != nil {
+					return fmt.Errorf("failed to serialize column %s to JSON: %v", k, err)
+				}
+				tmpMap[k] = string(jsonValue)
+			default:
+				// Assign other types as-is
+				tmpMap[k] = v
+			}
 		}
 
 		mutation := spanner.InsertOrUpdateMap(table, tmpMap)
@@ -422,12 +427,49 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return errors.New("ResourceNotFoundException", err)
 		}
+
 		return nil
 	})
+
 	return updatedObj, err
 }
 
-// SpannerDel for delete operation on Spanner
+func mergeLists(existing, new interface{}) []interface{} {
+	list1 := existing.([]interface{})
+	list2, ok := new.([]interface{})
+	if !ok {
+		list2 = []interface{}{new}
+	}
+	return append(list1, list2...)
+}
+
+func mergeMaps(existing, new interface{}) map[string]interface{} {
+	map1 := existing.(map[string]interface{})
+	map2 := new.(map[string]interface{})
+	for k, v := range map2 {
+		map1[k] = v
+	}
+	return map1
+}
+
+func mergeStringSets(existing, new interface{}) models.StringSet {
+	set1 := existing.(models.StringSet)
+	set2 := new.(models.StringSet)
+	for v := range set2 {
+		set1[v] = struct{}{}
+	}
+	return set1
+}
+
+func mergeNumberSets(existing, new interface{}) models.NumberSet {
+	set1 := existing.(models.NumberSet)
+	set2 := new.(models.NumberSet)
+	for v := range set2 {
+		set1[v] = struct{}{}
+	}
+	return set1
+}
+
 func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition) error {
 	tableConf, err := config.GetTableConf(table)
 	if err != nil {
@@ -446,6 +488,7 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 	var key spanner.Key
 	var m1 = make(map[string]interface{})
 
+	// Process primary and secondary keys
 	for k, v := range m {
 		m1[k] = v
 		if k == pKey {
@@ -465,19 +508,24 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 	} else {
 		key = spanner.Key{pValue}
 	}
+
 	_, err = s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
 		for k, v := range m {
 			tmpMap[k] = v
 		}
+
+		// Evaluate conditional expressions
 		if len(eval.Attributes) > 0 || expr != nil {
 			status, _ := evaluateConditionalExpression(ctx, t, table, m1, eval, expr)
 			if !status {
 				return errors.New("ConditionalCheckFailedException")
 			}
 		}
+
 		table = utils.ChangeTableNameForSpanner(table)
 
+		// Read the row
 		r, err := t.ReadRow(ctx, table, key, cols)
 		if err != nil {
 			return errors.New("ResourceNotFoundException", err)
@@ -486,6 +534,8 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return err
 		}
+
+		// Process and merge data for deletion
 		for k, v := range tmpMap {
 			v1, ok := rs[k]
 			if ok {
@@ -524,8 +574,10 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 		if sValue != nil {
 			tmpMap[sKey] = sValue
 		}
+
 		ddl := models.TableDDL[table]
 
+		// Handle special cases like BYTES(MAX) columns
 		for k, v := range tmpMap {
 			t, ok := ddl[k]
 			if t == "BYTES(MAX)" && ok {
@@ -536,6 +588,8 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 				tmpMap[k] = ba
 			}
 		}
+
+		// Perform the delete operation by updating the row
 		mutation := spanner.InsertOrUpdateMap(table, tmpMap)
 		err = t.BufferWrite([]*spanner.Mutation{mutation})
 		if err != nil {
@@ -547,8 +601,7 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 }
 
 // SpannerRemove - Spanner Remove functionality like update attribute
-func (s Storage) SpannerRemove(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition, colsToRemove []string) error {
-
+func (s Storage) SpannerRemove(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition, colsToRemove []string, oldRes map[string]interface{}) error {
 	_, err := s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
 		for k, v := range m {
@@ -560,10 +613,52 @@ func (s Storage) SpannerRemove(ctx context.Context, table string, m map[string]i
 				return errors.New("ConditionalCheckFailedException")
 			}
 		}
-		var null spanner.NullableValue
-		for _, col := range colsToRemove {
-			tmpMap[col] = null
+
+		// Process each removal target
+		for _, target := range colsToRemove {
+			if strings.Contains(target, "[") && strings.Contains(target, "]") {
+				// Handle list element removal
+				listAttr, idx := parseListRemoveTarget(target)
+
+				if val, ok := oldRes[listAttr]; ok {
+					if list, ok := val.([]interface{}); ok {
+						oldList := list
+						oldRes[listAttr] = removeListElement(list, idx)
+						tmpMap[listAttr] = oldList
+					}
+				}
+			} else if strings.Contains(target, ".") {
+				// Handle map key removal
+				mapAttr, key := parseMapRemoveTarget(target)
+				if val, ok := oldRes[mapAttr]; ok {
+					if m, ok := val.(map[string]interface{}); ok {
+						oldMap := m
+						delete(m, key)
+						oldRes[mapAttr] = m
+						tmpMap[mapAttr] = oldMap
+					}
+				}
+			} else {
+				// Direct column removal from oldRes
+				delete(oldRes, target)
+			}
 		}
+		// Handle special cases like BYTES(MAX) columns
+		for k, v := range tmpMap {
+			switch v := v.(type) {
+			case []interface{}:
+				// Serialize lists to JSON
+				jsonValue, err := json.Marshal(v)
+				if err != nil {
+					return fmt.Errorf("failed to serialize column %s to JSON: %v", k, err)
+				}
+				tmpMap[k] = string(jsonValue)
+			default:
+				// Assign other types as-is
+				tmpMap[k] = v
+			}
+		}
+
 		table = utils.ChangeTableNameForSpanner(table)
 		mutation := spanner.InsertOrUpdateMap(table, tmpMap)
 		err := t.BufferWrite([]*spanner.Mutation{mutation})
@@ -573,6 +668,33 @@ func (s Storage) SpannerRemove(ctx context.Context, table string, m map[string]i
 		return nil
 	})
 	return err
+}
+
+func parseListRemoveTarget(target string) (string, int) {
+	// Example: listAttr[2]
+	re := regexp.MustCompile(`(.*)\[(\d+)\]`)
+	matches := re.FindStringSubmatch(target)
+	if len(matches) == 3 {
+		index, _ := strconv.Atoi(matches[2])
+		return matches[1], index
+	}
+	return target, -1
+}
+
+func removeListElement(list []interface{}, idx int) []interface{} {
+	if idx < 0 || idx >= len(list) {
+		return list // Return original list for invalid indices
+	}
+	return append(list[:idx], list[idx+1:]...)
+}
+
+func parseMapRemoveTarget(target string) (string, string) {
+	// Example: mapAttr.key
+	parts := strings.SplitN(target, ".", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return target, ""
 }
 
 // SpannerBatchPut - this insert or update data in batch
@@ -589,6 +711,18 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 					return errors.New("ValidationException", err)
 				}
 				m[i][k] = ba
+			}
+			switch v := v.(type) {
+			case []interface{}:
+				// Serialize lists to JSON
+				jsonValue, err := json.Marshal(v)
+				if err != nil {
+					return fmt.Errorf("failed to serialize column %s to JSON: %v", k, err)
+				}
+				m[i][k] = string(jsonValue)
+			default:
+				// Assign other types as-is
+				m[i][k] = v
 			}
 		}
 		mutations[i] = spanner.InsertOrUpdateMap(table, m[i])
@@ -614,7 +748,9 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 	}
 
 	mutation := spanner.InsertOrUpdateMap(table, m)
+
 	mutations := []*spanner.Mutation{mutation}
+
 	err := t.BufferWrite(mutations)
 	if e := errors.AssignError(err); e != nil {
 		return e
@@ -733,7 +869,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 			return true
 		}
 		_, ok := rowMap[colName]
-		return !ok 
+		return !ok
 	}
 	if strings.HasPrefix(conditionalExpression, "attribute_exists") || strings.HasPrefix(conditionalExpression, "if_exists") {
 		if len(rowMap) == 0 {
@@ -745,7 +881,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 	return rowMap[conditionalExpression]
 }
 
-//parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
+// parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
 func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, error) {
 	singleRow := make(map[string]interface{})
 	if r == nil {
@@ -883,9 +1019,66 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			if !s.IsNull() {
 				singleRow[k] = s.Bool
 			}
+		case "JSON":
+			var jsonValue spanner.NullJSON
+			err := r.Column(i, &jsonValue)
+			if err != nil {
+				if strings.Contains(err.Error(), "ambiguous column name") {
+					continue
+				}
+				return nil, errors.New("ValidationException", err, k)
+			}
+			if !jsonValue.IsNull() {
+				parsed := parseDynamoDBJSON(jsonValue.Value)
+				singleRow[k] = parsed
+			}
+			fmt.Printf("Parsed JSON Value for %s: %+v\n", k, singleRow[k])
+
 		}
 	}
 	return singleRow, nil
+}
+
+func parseDynamoDBJSON(value interface{}) interface{} {
+	if value == nil {
+		return nil
+	}
+
+	switch v := value.(type) {
+	case map[string]interface{}:
+		for key, val := range v {
+			switch key {
+			case "S": // String
+				return val.(string)
+			case "N": // Number
+				num, _ := strconv.ParseFloat(val.(string), 64)
+				return num
+			case "BOOL": // Boolean
+				return val.(bool)
+			case "M": // Map (nested object)
+				result := make(map[string]interface{})
+				for k, nestedVal := range val.(map[string]interface{}) {
+					result[k] = parseDynamoDBJSON(nestedVal)
+				}
+				return result
+			case "L": // List
+				list := val.([]interface{})
+				result := make([]interface{}, len(list))
+				for i, item := range list {
+					result[i] = parseDynamoDBJSON(item) // Recursively parse each list item
+				}
+				return result
+			}
+		}
+	case []interface{}: // Handle direct list structures
+		result := make([]interface{}, len(v))
+		for i, item := range v {
+			result[i] = parseDynamoDBJSON(item)
+		}
+		return result
+	}
+
+	return value // Return as-is for unsupported types
 }
 
 func checkInifinty(value float64, logData interface{}) error {
