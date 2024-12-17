@@ -59,7 +59,7 @@ func RouteRequest(c *gin.Context) {
 	case "UpdateItem":
 		Update(c)
 	default:
-		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of" + amzTarget).
+		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of"+amzTarget).
 			HTTPResponse("X-Amz-Target Header not supported"))
 	}
 }
@@ -140,18 +140,21 @@ func UpdateMeta(c *gin.Context) {
 func put(ctx context.Context, tableName string, putObj map[string]interface{}, expr *models.UpdateExpressionCondition, conditionExp string, expressionAttr map[string]interface{}) (map[string]interface{}, error) {
 	tableConf, err := config.GetTableConf(tableName)
 	if err != nil {
+		fmt.Println("errored here - 1")
 		return nil, err
 	}
 	sKey := tableConf.SortKey
 	pKey := tableConf.PartitionKey
 	var oldResp map[string]interface{}
 
-	oldResp, err = storage.GetStorageInstance().SpannerGet(ctx, tableName, putObj[pKey], putObj[sKey], nil)
+	oldResp, spannerRow, err := storage.GetStorageInstance().SpannerGet(ctx, tableName, putObj[pKey], putObj[sKey], nil)
 	if err != nil {
+		fmt.Println("errored here - 2")
 		return nil, err
 	}
-	res, err := services.Put(ctx, tableName, putObj, nil, conditionExp, expressionAttr, oldResp)
+	res, err := services.Put(ctx, tableName, putObj, nil, conditionExp, expressionAttr, oldResp, spannerRow)
 	if err != nil {
+		fmt.Println("errored here - 3")
 		return nil, err
 	}
 	go services.StreamDataToThirdParty(oldResp, res, tableName)
@@ -290,7 +293,7 @@ func GetItemMeta(c *gin.Context) {
 			return
 		}
 		getItemMeta.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(getItemMeta.TableName, getItemMeta.ExpressionAttributeNames)
-		res, rowErr := services.GetWithProjection(c.Request.Context(), getItemMeta.TableName, getItemMeta.PrimaryKeyMap, getItemMeta.ProjectionExpression, getItemMeta.ExpressionAttributeNames)
+		res, _, rowErr := services.GetWithProjection(c.Request.Context(), getItemMeta.TableName, getItemMeta.PrimaryKeyMap, getItemMeta.ProjectionExpression, getItemMeta.ExpressionAttributeNames)
 		if rowErr == nil {
 			changedColumns := ChangeResponseToOriginalColumns(getItemMeta.TableName, res)
 			output, err := ChangeMaptoDynamoMap(changedColumns)
@@ -431,7 +434,7 @@ func DeleteItem(c *gin.Context) {
 			deleteItem.ConditionExpression = strings.ReplaceAll(deleteItem.ConditionExpression, k, v)
 		}
 
-		oldRes, _ := services.GetWithProjection(c.Request.Context(), deleteItem.TableName, deleteItem.PrimaryKeyMap, "", nil)
+		oldRes, _, _ := services.GetWithProjection(c.Request.Context(), deleteItem.TableName, deleteItem.PrimaryKeyMap, "", nil)
 		err := services.Delete(c.Request.Context(), deleteItem.TableName, deleteItem.PrimaryKeyMap, deleteItem.ConditionExpression, deleteItem.ExpressionAttributeMap, nil)
 		if err == nil {
 			output, _ := ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(deleteItem.TableName, oldRes))

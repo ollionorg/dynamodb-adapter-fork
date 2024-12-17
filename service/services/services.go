@@ -18,6 +18,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"strconv"
 	"strings"
@@ -56,19 +57,22 @@ func getSpannerProjections(projectionExpression, table string, expressionAttribu
 }
 
 // Put writes an object to Spanner
-func Put(ctx context.Context, tableName string, putObj map[string]interface{}, expr *models.UpdateExpressionCondition, conditionExp string, expressionAttr, oldRes map[string]interface{}) (map[string]interface{}, error) {
+func Put(ctx context.Context, tableName string, putObj map[string]interface{}, expr *models.UpdateExpressionCondition, conditionExp string, expressionAttr, oldRes map[string]interface{}, spannerRow map[string]interface{}) (map[string]interface{}, error) {
 	tableConf, err := config.GetTableConf(tableName)
 	if err != nil {
+		fmt.Println("errored here - 4")
 		return nil, err
 	}
 
 	tableName = tableConf.ActualTable
 	e, err := utils.CreateConditionExpression(conditionExp, expressionAttr)
 	if err != nil {
+		fmt.Println("errored here - 5")
 		return nil, err
 	}
-	newResp, err := storage.GetStorageInstance().SpannerPut(ctx, tableName, putObj, e, expr)
+	newResp, err := storage.GetStorageInstance().SpannerPut(ctx, tableName, putObj, e, expr, spannerRow)
 	if err != nil {
+		fmt.Println("errored here - 6")
 		return nil, err
 	}
 
@@ -138,7 +142,7 @@ func Del(ctx context.Context, tableName string, attrMap map[string]interface{}, 
 	}
 	sKey := tableConf.SortKey
 	pKey := tableConf.PartitionKey
-	res, err := storage.GetStorageInstance().SpannerGet(ctx, tableName, attrMap[pKey], attrMap[sKey], nil)
+	res, _, err := storage.GetStorageInstance().SpannerGet(ctx, tableName, attrMap[pKey], attrMap[sKey], nil)
 	if err != nil {
 		return nil, err
 	}
@@ -205,13 +209,13 @@ func BatchPut(ctx context.Context, tableName string, arrAttrMap []map[string]int
 }
 
 // GetWithProjection get table data with projection
-func GetWithProjection(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) (map[string]interface{}, error) {
+func GetWithProjection(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) (map[string]interface{}, map[string]interface{}, error) {
 	if primaryKeyMap == nil {
-		return nil, errors.New("ValidationException")
+		return nil, nil, errors.New("ValidationException")
 	}
 	tableConf, err := config.GetTableConf(tableName)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	tableName = tableConf.ActualTable
@@ -222,7 +226,8 @@ func GetWithProjection(ctx context.Context, tableName string, primaryKeyMap map[
 	if tableConf.SortKey != "" {
 		sValue = primaryKeyMap[tableConf.SortKey]
 	}
-	return storage.GetStorageInstance().SpannerGet(ctx, tableName, pValue, sValue, projectionCols)
+	res, spannerRow, err := storage.GetStorageInstance().SpannerGet(ctx, tableName, pValue, sValue, projectionCols)
+	return res, spannerRow, err
 }
 
 // QueryAttributes from Spanner

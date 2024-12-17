@@ -18,6 +18,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"log"
 	"math"
 	"reflect"
 	"regexp"
@@ -73,7 +75,7 @@ func (s Storage) SpannerBatchGet(ctx context.Context, tableName string, pKeys, s
 			}
 			return nil, errors.New("ValidationException", err)
 		}
-		singleRow, err := parseRow(r, colDLL)
+		singleRow, _, err := parseRow(r, colDLL)
 		if err != nil {
 			return nil, err
 		}
@@ -85,7 +87,7 @@ func (s Storage) SpannerBatchGet(ctx context.Context, tableName string, pKeys, s
 }
 
 // SpannerGet - get with spanner
-func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys interface{}, projectionCols []string) (map[string]interface{}, error) {
+func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys interface{}, projectionCols []string) (map[string]interface{}, map[string]interface{}, error) {
 	var key spanner.Key
 	if sKeys == nil {
 		key = spanner.Key{pKeys}
@@ -96,18 +98,19 @@ func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys 
 		var ok bool
 		projectionCols, ok = models.TableColumnMap[utils.ChangeTableNameForSpanner(tableName)]
 		if !ok {
-			return nil, errors.New("ResourceNotFoundException", tableName)
+			return nil, nil, errors.New("ResourceNotFoundException", tableName)
 		}
 	}
 	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(tableName)]
 	if !ok {
-		return nil, errors.New("ResourceNotFoundException", tableName)
+		return nil, nil, errors.New("ResourceNotFoundException", tableName)
 	}
 	tableName = utils.ChangeTableNameForSpanner(tableName)
 	client := s.getSpannerClient(tableName)
+	fmt.Println("client---->", client)
 	row, err := client.Single().ReadRow(ctx, tableName, key, projectionCols)
 	if err := errors.AssignError(err); err != nil {
-		return nil, errors.New("ResourceNotFoundException", tableName, key, err)
+		return nil, nil, errors.New("ResourceNotFoundException", tableName, key, err)
 	}
 
 	return parseRow(row, colDLL)
@@ -140,7 +143,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 			allRows = append(allRows, singleRow)
 			break
 		}
-		singleRow, err := parseRow(r, colDLL)
+		singleRow, _, err := parseRow(r, colDLL)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +153,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 }
 
 // SpannerPut - Spanner put insert a single object
-func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition) (map[string]interface{}, error) {
+func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition, spannerRow map[string]interface{}) (map[string]interface{}, error) {
 	update := map[string]interface{}{}
 	_, err := s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
@@ -160,9 +163,11 @@ func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]inte
 		if len(eval.Attributes) > 0 || expr != nil {
 			status, err := evaluateConditionalExpression(ctx, t, table, tmpMap, eval, expr)
 			if err != nil {
+				fmt.Println("errored here - 7")
 				return err
 			}
 			if !status {
+				fmt.Println("errored here - 8")
 				return errors.New("ConditionalCheckFailedException", eval, expr)
 			}
 		}
@@ -170,7 +175,8 @@ func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]inte
 		for k, v := range tmpMap {
 			update[k] = v
 		}
-		return s.performPutOperation(ctx, t, table, tmpMap)
+		fmt.Println("tmpMap===>", tmpMap)
+		return s.performPutOperation(ctx, t, table, tmpMap, spannerRow)
 	})
 
 	return update, err
@@ -319,7 +325,7 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return errors.New("ResourceNotFoundException", err)
 		}
-		rs, err := parseRow(r, colDLL)
+		rs, _, err := parseRow(r, colDLL)
 		if err != nil {
 			return err
 		}
@@ -482,7 +488,7 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return errors.New("ResourceNotFoundException", err)
 		}
-		rs, err := parseRow(r, colDLL)
+		rs, _, err := parseRow(r, colDLL)
 		if err != nil {
 			return err
 		}
@@ -600,16 +606,110 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 	return nil
 }
 
-func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTransaction, table string, m map[string]interface{}) error {
+func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTransaction, table string, m map[string]interface{}, spannerRow map[string]interface{}) error {
+	ddl := models.TableDDL[table]
+	fmt.Println("raw map==>", m)
+	for k, v := range m {
+		if strings.Contains(k, ".") {
+			pathfeilds := strings.Split(k, ".")
+			colName := pathfeilds[0]
+			t, ok := ddl[colName]
+			if t == "JSON" && ok {
+
+				var data map[string]interface{}
+				jsonData := spannerRow[colName]
+
+				// jsonData should be assumed to be a JSON object. If it's already marshaled, just convert it to a string.
+				jsonBytes, err := json.Marshal(jsonData) // Only if jsonData needs to be marshaled
+				if err != nil {
+					log.Fatalf("error marshalling JSON: %v", err)
+				}
+				fmt.Println("marshalled JSON before-->", string(jsonBytes))
+
+				// Unmarshal into a map for manipulation
+				if err := json.Unmarshal(jsonBytes, &data); err != nil {
+					log.Fatalf("Error unmarshalling JSON: %v", err)
+				}
+
+				// Updating the field
+				if updated := updateFieldByPath(data, k, v); updated {
+					fmt.Println("Update successful")
+				} else {
+					fmt.Println("Update failed: path not found")
+				}
+
+				// Marshal back to JSON after the update
+				updatedJSON, err := json.MarshalIndent(data, "", "  ")
+				if err != nil {
+					fmt.Println("Error marshaling JSON:", err)
+					return errors.New("Error marshaling JSON:", err)
+				}
+				fmt.Println("marshalled JSON after-->", string(updatedJSON)) // This is the properly formatted JSON
+
+				// Store the updated JSON in the map
+				strigngyfiedJSON := string(updatedJSON)
+				m[colName] = strings.ReplaceAll(strigngyfiedJSON, `\"`, `"`)
+				delete(m, k)
+			}
+		} else {
+			t, ok := ddl[k]
+			if t == "BYTES(MAX)" && ok {
+				ba, err := json.Marshal(v)
+				if err != nil {
+					fmt.Println("errored here - 9")
+					return errors.New("ValidationException", err)
+				}
+				m[k] = ba
+			}
+			if t == "JSON" && ok {
+				fmt.Println(" JSONv--->", v)
+				ba, err := json.MarshalIndent(v, "", "  ")
+				fmt.Println("marshalled JSON-->", string(ba))
+				if err != nil {
+					fmt.Println("errored here - 11")
+					return errors.New("ValidationException", err)
+				}
+				m[k] = string(ba)
+			}
+		}
+	}
+	fmt.Println("final map--->", m)
+	mutation := spanner.InsertOrUpdateMap(table, m)
+	mutations := []*spanner.Mutation{mutation}
+	err := t.BufferWrite(mutations)
+	if e := errors.AssignError(err); e != nil {
+		fmt.Println("errored here - 10", e)
+		return e
+	}
+	return nil
+}
+
+func (s Storage) performUpdateOperation(ctx context.Context, t *spanner.ReadWriteTransaction, table string, m map[string]interface{}) error {
 	ddl := models.TableDDL[table]
 	for k, v := range m {
+		if strings.Contains(k, ".") {
+			pathfeilds := strings.Split(k, ".")
+			k = pathfeilds[0]
+
+		}
 		t, ok := ddl[k]
 		if t == "BYTES(MAX)" && ok {
 			ba, err := json.Marshal(v)
 			if err != nil {
+				fmt.Println("errored here - 9")
 				return errors.New("ValidationException", err)
 			}
 			m[k] = ba
+		}
+		if t == "JSON" && ok {
+			fmt.Println("v--->", v)
+			ba, err := json.Marshal(v)
+			fmt.Println("marshalled JSON-->", string(ba))
+			if err != nil {
+				fmt.Println("errored here - 11")
+				return errors.New("ValidationException", err)
+			}
+			m[k] = string(ba)
 		}
 	}
 
@@ -617,6 +717,7 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 	mutations := []*spanner.Mutation{mutation}
 	err := t.BufferWrite(mutations)
 	if e := errors.AssignError(err); e != nil {
+		fmt.Println("errored here - 10", e)
 		return e
 	}
 	return nil
@@ -666,7 +767,7 @@ func evaluateConditionalExpression(ctx context.Context, t *spanner.ReadWriteTran
 	if e := errors.AssignError(err); e != nil {
 		return false, e
 	}
-	rowMap, err := parseRow(r, colDDL)
+	rowMap, _, err := parseRow(r, colDDL)
 	if err != nil {
 		return false, err
 	}
@@ -733,7 +834,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 			return true
 		}
 		_, ok := rowMap[colName]
-		return !ok 
+		return !ok
 	}
 	if strings.HasPrefix(conditionalExpression, "attribute_exists") || strings.HasPrefix(conditionalExpression, "if_exists") {
 		if len(rowMap) == 0 {
@@ -745,12 +846,13 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 	return rowMap[conditionalExpression]
 }
 
-//parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
-func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, error) {
+// parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
+func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, map[string]interface{}, error) {
 	singleRow := make(map[string]interface{})
 	if r == nil {
-		return singleRow, nil
+		return singleRow, nil, nil
 	}
+	spannerRow := make(map[string]interface{})
 
 	cols := r.ColumnNames()
 	for i, k := range cols {
@@ -759,7 +861,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 		}
 		v, ok := colDDL[k]
 		if !ok {
-			return nil, errors.New("ResourceNotFoundException", k)
+			return nil, nil, errors.New("ResourceNotFoundException", k)
 		}
 		switch v {
 		case "STRING(MAX)":
@@ -769,7 +871,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				if strings.Contains(err.Error(), "ambiguous column name") {
 					continue
 				}
-				return nil, errors.New("ValidationException", err, k)
+				return nil, spannerRow, errors.New("ValidationException", err, k)
 			}
 			if !s.IsNull() {
 				singleRow[k] = s.StringVal
@@ -781,7 +883,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				if strings.Contains(err.Error(), "ambiguous column name") {
 					continue
 				}
-				return nil, errors.New("ValidationException", err, k)
+				return nil, spannerRow, errors.New("ValidationException", err, k)
 			}
 			if len(s) > 0 {
 				var m interface{}
@@ -835,7 +937,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				if strings.Contains(err.Error(), "ambiguous column name") {
 					continue
 				}
-				return nil, errors.New("ValidationException", err, k)
+				return nil, spannerRow, errors.New("ValidationException", err, k)
 			}
 			if !s.IsNull() {
 				singleRow[k] = s.Int64
@@ -847,7 +949,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				if strings.Contains(err.Error(), "ambiguous column name") {
 					continue
 				}
-				return nil, errors.New("ValidationException", err, k)
+				return nil, spannerRow, errors.New("ValidationException", err, k)
 
 			}
 			if !s.IsNull() {
@@ -860,7 +962,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				if strings.Contains(err.Error(), "ambiguous column name") {
 					continue
 				}
-				return nil, errors.New("ValidationException", err, k)
+				return nil, spannerRow, errors.New("ValidationException", err, k)
 			}
 			if !s.IsNull() {
 				if s.Numeric.IsInt() {
@@ -877,15 +979,48 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				if strings.Contains(err.Error(), "ambiguous column name") {
 					continue
 				}
-				return nil, errors.New("ValidationException", err, k)
+				return nil, spannerRow, errors.New("ValidationException", err, k)
 
 			}
 			if !s.IsNull() {
 				singleRow[k] = s.Bool
 			}
+		case "JSON":
+			var s spanner.NullJSON
+			var result map[string]interface{}
+			err := r.Column(i, &s)
+			if err != nil {
+				if strings.Contains(err.Error(), "ambiguous column name") {
+					continue
+				}
+				return nil, spannerRow, errors.New("ValidationException", err, k)
+			}
+
+			if err := json.Unmarshal([]byte(s.String()), &result); err != nil {
+				log.Fatalf("Error parsing JSON: %v", err)
+			}
+			spannerRow[k] = result
+			if !s.IsNull() {
+				// Create a new map to hold dynamic key-value pairs
+				mapofstring := make(map[string]interface{})
+
+				for key, value := range result {
+					// Check if this key represents a potential or map structure
+					mapofstring[key] = map[string]interface{}{
+						"S": value,
+					}
+
+				}
+				// Only add to the result if any address-like keys were found
+				if len(mapofstring) > 0 {
+					singleRow[k] = map[string]interface{}{
+						"M": mapofstring, // Wrap the addressMap in "M" to indicate it's a map
+					}
+				}
+			}
 		}
 	}
-	return singleRow, nil
+	return singleRow, spannerRow, nil
 }
 
 func checkInifinty(value float64, logData interface{}) error {
@@ -897,4 +1032,29 @@ func checkInifinty(value float64, logData interface{}) error {
 	}
 
 	return nil
+}
+
+// updateFieldByPath navigates the nested JSON structure to update the desired field.
+func updateFieldByPath(data map[string]interface{}, path string, newValue interface{}) bool {
+	keys := strings.Split(path, ".")
+	keys = keys[1:]
+	// Traverse to the deepest map
+	current := data
+	for i, key := range keys {
+		if i == len(keys)-1 {
+			// If it's the last key, perform the update
+			current[key] = newValue
+			return true
+		}
+
+		// Traverse deeper into the map structure
+		if next, ok := current[key].(map[string]interface{}); ok {
+			current = next
+		} else {
+			// Path is invalid if we can't find the next map level
+			fmt.Printf("Invalid path: key %s not found\n", key)
+			return false
+		}
+	}
+	return false
 }

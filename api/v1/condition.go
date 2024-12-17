@@ -224,7 +224,7 @@ func parseUpdateExpresstion(actionValue string) *models.UpdateExpressionConditio
 	return expr
 }
 
-func performOperation(ctx context.Context, action string, actionValue string, updateAtrr models.UpdateAttr, oldRes map[string]interface{}) (map[string]interface{}, map[string]interface{}, error) {
+func performOperation(ctx context.Context, action string, actionValue string, updateAtrr models.UpdateAttr, oldRes map[string]interface{}, spannerRow map[string]interface{}) (map[string]interface{}, map[string]interface{}, error) {
 	switch {
 	case action == "DELETE":
 		// perform delete
@@ -234,7 +234,8 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 	case action == "SET":
 		// Update data in table
 		m, expr := parseActionValue(actionValue, updateAtrr, false)
-		res, err := services.Put(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes)
+		fmt.Println("m - SET pasrseActionvalue-->", m)
+		res, err := services.Put(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes, spannerRow)
 		return res, m, err
 	case action == "ADD":
 		// Add data in table
@@ -254,8 +255,9 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 func UpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr) (interface{}, error) {
 	updateAtrr.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(updateAtrr.TableName, updateAtrr.ExpressionAttributeNames)
 	var oldRes map[string]interface{}
+	var spannerRow map[string]interface{}
 	if updateAtrr.ReturnValues != "NONE" {
-		oldRes, _ = services.GetWithProjection(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, "", nil)
+		oldRes, spannerRow, _ = services.GetWithProjection(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, "", nil)
 	}
 	var resp map[string]interface{}
 	var actVal = make(map[string]interface{})
@@ -264,9 +266,15 @@ func UpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr) (interf
 		updateAtrr.UpdateExpression = strings.ReplaceAll(updateAtrr.UpdateExpression, k, v)
 		updateAtrr.ConditionExpression = strings.ReplaceAll(updateAtrr.ConditionExpression, k, v)
 	}
+	fmt.Println("oldRes--->", oldRes)
+	fmt.Println("UpdateExpression--->", updateAtrr.UpdateExpression)
+	fmt.Println("ConditionExpression--->", updateAtrr.ConditionExpression)
 	m := extractOperations(updateAtrr.UpdateExpression)
+	fmt.Println("m - extractOperations--->", m)
 	for k, v := range m {
-		res, acVal, err := performOperation(ctx, k, v, updateAtrr, oldRes)
+		fmt.Println("k-->", k)
+		fmt.Println("v-->", v)
+		res, acVal, err := performOperation(ctx, k, v, updateAtrr, oldRes, spannerRow)
 		resp = res
 		er = err
 		for k, v := range acVal {
@@ -454,7 +462,7 @@ func ChangeResponseColumn(obj map[string]interface{}) map[string]interface{} {
 // ChangeColumnToSpanner converts original column name to  spanner supported column names
 func ChangeColumnToSpanner(obj map[string]interface{}) map[string]interface{} {
 	rs := make(map[string]interface{})
-	
+
 	for k, v := range obj {
 
 		if k1, ok := models.ColumnToOriginalCol[k]; ok {
@@ -631,7 +639,7 @@ func ChangeQueryResponseColumn(tableName string, obj map[string]interface{}) map
 	return obj
 }
 
-//ChangeMaptoDynamoMap converts simple map into dynamo map
+// ChangeMaptoDynamoMap converts simple map into dynamo map
 func ChangeMaptoDynamoMap(in interface{}) (map[string]interface{}, error) {
 	if in == nil {
 		return nil, nil

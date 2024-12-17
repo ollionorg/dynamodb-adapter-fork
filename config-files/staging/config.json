@@ -1,5 +1,5 @@
 {
-    "GoogleProjectID": "Your Google Project ID",
-    "SpannerDb": "Your Spanner Database Name",
+    "GoogleProjectID": "cassandra-to-spanner",
+    "SpannerDb": "cluster9",
     "QueryLimit": 5000
-}
+  }
