@@ -761,6 +761,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 		if !ok {
 			return nil, errors.New("ResourceNotFoundException", k)
 		}
+		fmt.Println(k, "k", v)
 		switch v {
 		case "STRING(MAX)":
 			var s spanner.NullString
@@ -771,7 +772,11 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				}
 				return nil, errors.New("ValidationException", err, k)
 			}
-			if !s.IsNull() {
+			if s.IsNull() {
+				singleRow[k] = struct {
+					NULL bool `json:"NULL"`
+				}{true}
+			} else {
 				singleRow[k] = s.StringVal
 			}
 		case "BYTES(MAX)":
@@ -837,7 +842,11 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				}
 				return nil, errors.New("ValidationException", err, k)
 			}
-			if !s.IsNull() {
+			if s.IsNull() {
+				singleRow[k] = struct {
+					NULL bool `json:"NULL"`
+				}{true}
+			} else {
 				singleRow[k] = s.Int64
 			}
 		case "FLOAT64":
@@ -850,7 +859,11 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				return nil, errors.New("ValidationException", err, k)
 
 			}
-			if !s.IsNull() {
+			if s.IsNull() {
+				singleRow[k] = struct {
+					NULL bool `json:"NULL"`
+				}{true}
+			} else {
 				singleRow[k] = s.Float64
 			}
 		case "NUMERIC":
@@ -862,7 +875,11 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				}
 				return nil, errors.New("ValidationException", err, k)
 			}
-			if !s.IsNull() {
+			if s.IsNull() {
+				singleRow[k] = struct {
+					NULL bool `json:"NULL"`
+				}{true}
+			} else {
 				if s.Numeric.IsInt() {
 					tmp, _ := s.Numeric.Float64()
 					singleRow[k] = int64(tmp)
@@ -880,11 +897,16 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				return nil, errors.New("ValidationException", err, k)
 
 			}
-			if !s.IsNull() {
+			if s.IsNull() {
+				singleRow[k] = struct {
+					NULL bool `json:"NULL"`
+				}{true}
+			} else {
 				singleRow[k] = s.Bool
 			}
 		}
 	}
+	fmt.Println("Single Row: ", singleRow)
 	return singleRow, nil
 }
 
