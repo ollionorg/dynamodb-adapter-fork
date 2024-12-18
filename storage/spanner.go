@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"math"
 	"reflect"
 	"regexp"
@@ -758,7 +757,6 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 		}
 		v, ok := colDDL[k]
 		if !ok {
-			fmt.Println(k)
 			return nil, errors.New("ResourceNotFoundException", k)
 		}
 
@@ -778,6 +776,10 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			err = parseBoolColumn(r, i, k, singleRow)
 		case "ARRAY<STRING(MAX)>":
 			err = parseStringArrayColumn(r, i, k, singleRow)
+		case "ARRAY<BYTES>":
+			err = parseByteArrayColumn(r, i, k, singleRow)
+		case "ARRAY<FLOAT64>":
+			err = parseNumberArrayColumn(r, i, k, singleRow)
 		default:
 			return nil, errors.New("TypeNotFound", err, k)
 		}
@@ -884,6 +886,36 @@ func parseStringArrayColumn(r *spanner.Row, idx int, col string, row map[string]
 		temp = append(temp, val.StringVal)
 	}
 	if len(s) > 0 {
+		row[col] = temp
+	}
+	return nil
+}
+
+func parseByteArrayColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var b [][]byte
+	err := r.Column(idx, &b)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if len(b) > 0 {
+		row[col] = b
+	}
+	return nil
+}
+
+func parseNumberArrayColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var nums []spanner.NullFloat64
+	err := r.Column(idx, &nums)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	var temp []float64
+	for _, val := range nums {
+		if val.Valid {
+			temp = append(temp, val.Float64)
+		}
+	}
+	if len(nums) > 0 {
 		row[col] = temp
 	}
 	return nil

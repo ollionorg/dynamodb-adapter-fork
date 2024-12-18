@@ -519,22 +519,49 @@ func convertFrom(a *dynamodb.AttributeValue, tableName string) interface{} {
 		return a.B
 	}
 	if a.SS != nil {
-		l := []string{}
-		stringMap := make(map[string]struct{})
+		uniqueStrings := make(map[string]struct{})
 		for _, v := range a.SS {
-			if _, exists := stringMap[*v]; !exists {
-				stringMap[*v] = struct{}{}
-				l = append(l, *v)
+			uniqueStrings[*v] = struct{}{}
+		}
+
+		// Convert map keys to a slice
+		l := make([]string, 0, len(uniqueStrings))
+		for str := range uniqueStrings {
+			l = append(l, str)
+		}
+
+		return l
+	}
+	if a.NS != nil {
+		l := []float64{}
+		numberMap := make(map[string]struct{})
+		for _, v := range a.NS {
+			// Deduplicate using the string value of the number
+			if _, exists := numberMap[*v]; !exists {
+				numberMap[*v] = struct{}{}
+				// Parse the number and add to the result slice
+				n, err := strconv.ParseFloat(*v, 64)
+				if err != nil {
+					panic(fmt.Sprintf("Invalid number in NS: %s", *v))
+				}
+				l = append(l, n)
 			}
 		}
 		return l
 	}
-	if a.NS != nil {
-		l := make([]interface{}, len(a.NS))
-		for index, v := range a.NS {
-			l[index], _ = strconv.ParseFloat(*v, 64)
+	if a.BS != nil {
+		// Handle Binary Set
+		binarySet := [][]byte{}
+		binaryMap := make(map[string]struct{})
+		for _, v := range a.BS {
+			// Convert binary slice to string for deduplication
+			key := string(v)
+			if _, exists := binaryMap[key]; !exists {
+				binaryMap[key] = struct{}{}
+				binarySet = append(binarySet, v)
+			}
 		}
-		return l
+		return binarySet
 	}
 	panic(fmt.Sprintf("%#v is not a supported dynamodb.AttributeValue", a))
 }
@@ -711,6 +738,26 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 			count++
 		}
 		output["SS"] = listVal
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Float32, reflect.Float64:
+		listVal := []string{}
+		for i := 0; i < v.Len(); i++ {
+			listVal = append(listVal, fmt.Sprintf("%v", v.Index(i).Interface()))
+		}
+		output["NS"] = listVal
+
+	case reflect.Slice:
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			binarySet := [][]byte{}
+			for i := 0; i < v.Len(); i++ {
+				elem := v.Index(i)
+				if elem.Kind() == reflect.Slice && elem.IsValid() && !elem.IsNil() {
+					binarySet = append(binarySet, elem.Bytes())
+				}
+			}
+			output["BS"] = binarySet
+		}
+
 	default:
 		listVal := make([]map[string]interface{}, 0, v.Len())
 
