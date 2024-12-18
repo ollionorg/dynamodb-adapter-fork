@@ -536,10 +536,8 @@ func convertFrom(a *dynamodb.AttributeValue, tableName string) interface{} {
 		l := []float64{}
 		numberMap := make(map[string]struct{})
 		for _, v := range a.NS {
-			// Deduplicate using the string value of the number
 			if _, exists := numberMap[*v]; !exists {
 				numberMap[*v] = struct{}{}
-				// Parse the number and add to the result slice
 				n, err := strconv.ParseFloat(*v, 64)
 				if err != nil {
 					panic(fmt.Sprintf("Invalid number in NS: %s", *v))
@@ -554,7 +552,6 @@ func convertFrom(a *dynamodb.AttributeValue, tableName string) interface{} {
 		binarySet := [][]byte{}
 		binaryMap := make(map[string]struct{})
 		for _, v := range a.BS {
-			// Convert binary slice to string for deduplication
 			key := string(v)
 			if _, exists := binaryMap[key]; !exists {
 				binaryMap[key] = struct{}{}
