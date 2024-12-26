@@ -113,6 +113,7 @@ Configure AWS credentials:
 aws configure set aws_access_key_id YOUR_ACCESS_KEY
 aws configure set aws_secret_access_key YOUR_SECRET_KEY
 aws configure set default.region YOUR_REGION
+aws configure set aws_session_token YOUR_SESSION_TOKEN
 ```
 Google Cloud CLI:
 Authenticate and set up your environment:
