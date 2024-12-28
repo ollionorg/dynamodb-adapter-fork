@@ -846,6 +846,13 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 	return rowMap[conditionalExpression]
 }
 
+// isValidJSONObject checks if a string is a valid JSON object
+func isValidJSONObject(s string) error {
+	var js map[string]interface{}
+	err := json.Unmarshal([]byte(s), &js)
+	return err
+}
+
 // parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
 func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, map[string]interface{}, error) {
 	singleRow := make(map[string]interface{})
@@ -987,7 +994,6 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			}
 		case "JSON":
 			var s spanner.NullJSON
-			var result map[string]interface{}
 			err := r.Column(i, &s)
 			if err != nil {
 				if strings.Contains(err.Error(), "ambiguous column name") {
@@ -996,33 +1002,46 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				return nil, spannerRow, errors.New("ValidationException", err, k)
 			}
 
-			if err := json.Unmarshal([]byte(s.String()), &result); err != nil {
-				log.Fatalf("Error parsing JSON: %v", err)
-			}
-			spannerRow[k] = result
 			if !s.IsNull() {
-				// Create a new map to hold dynamic key-value pairs
-				mapofstring := make(map[string]interface{})
-
-				for key, value := range result {
-					// Check if this key represents a potential or map structure
-					mapofstring[key] = map[string]interface{}{
-						"S": value,
-					}
-
+				var decodedData interface{}
+				if err = json.Unmarshal([]byte(s.String()), &decodedData); err != nil {
+					return nil, spannerRow, errors.New("JSONParseException", err)
 				}
-				// Only add to the result if any address-like keys were found
-				if len(mapofstring) > 0 {
-					singleRow[k] = map[string]interface{}{
-						"M": mapofstring, // Wrap the addressMap in "M" to indicate it's a map
-					}
-				}
+				singleRow[k] = parseNestedJSON(decodedData)
+				spannerRow[k] = decodedData
 			}
 		}
 	}
 	return singleRow, spannerRow, nil
 }
-
+func parseNestedJSON(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		m := make(map[string]interface{})
+		for key, val := range v {
+			m[key] = parseNestedJSON(val)
+		}
+		return map[string]interface{}{"M": m}
+	case []interface{}:
+		for i, item := range v {
+			v[i] = parseNestedJSON(item)
+		}
+		return map[string]interface{}{"L": v} // Assuming list items should be wrapped
+	case string:
+		// Additional handling for strings if necessary (e.g., base64 validation)
+		if base64Regexp.MatchString(v) {
+			if ba, err := base64.StdEncoding.DecodeString(v); err == nil {
+				var result interface{}
+				if json.Unmarshal(ba, &result) == nil {
+					return parseNestedJSON(result)
+				}
+			}
+		}
+		return map[string]interface{}{"S": v}
+	default:
+		return map[string]interface{}{"S": fmt.Sprintf("%v", v)}
+	}
+}
 func checkInifinty(value float64, logData interface{}) error {
 	if math.IsInf(value, 1) {
 		return errors.New("ValidationException", "value found is infinity", logData)

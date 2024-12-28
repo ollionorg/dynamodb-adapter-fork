@@ -476,6 +476,8 @@ func ChangeColumnToSpanner(obj map[string]interface{}) map[string]interface{} {
 }
 
 func convertFrom(a *dynamodb.AttributeValue, tableName string) interface{} {
+
+	fmt.Println("a value", a.String())
 	if a.S != nil {
 		return *a.S
 	}
