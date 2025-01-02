@@ -101,7 +101,6 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 	} else {
 		pairs = strings.Split(actionValue, ",")
 	}
-
 	var v []string
 	for _, p := range pairs {
 		var addValue float64
@@ -132,6 +131,36 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 					addValue = -v2
 					status = true
 				}
+			}
+		}
+
+		if strings.Contains(p, "list_append") {
+			re := regexp.MustCompile(`list_append\(([^,]+),\s*([^\)]+)\)`)
+			matches := re.FindStringSubmatch(p)
+			if len(matches) == 3 {
+				fieldName := matches[1]
+				newValueKey := matches[2]
+				// Fetch the old value from OldData
+				oldValue, _ := oldRes[fieldName].([]interface{})
+
+				// Fetch the new value from ExpressionAttributeMap
+				newValue, ok := updateAtrr.ExpressionAttributeMap[newValueKey]
+				if ok {
+					if newValueList, ok := newValue.([]interface{}); ok {
+						// Append new values to the old list
+						mergedList := append(oldValue, newValueList...)
+						resp[fieldName] = mergedList
+					} else {
+						// Handle case where newValue is a single element
+						mergedList := append(oldValue, newValue)
+						resp[fieldName] = mergedList
+					}
+
+				} else {
+					// If newValue is not found in ExpressionAttributeMap, use placeholder
+					resp[fieldName] = oldValue
+				}
+				continue
 			}
 		}
 
@@ -182,35 +211,6 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 			resp[field] = value
 		}
 
-		if strings.Contains(p, "list_append") {
-			re := regexp.MustCompile(`list_append\(([^,]+),\s*([^\)]+)\)`)
-			matches := re.FindStringSubmatch(p)
-			if len(matches) == 3 {
-				fieldName := matches[1]
-				newValueKey := matches[2]
-				// Fetch the old value from OldData
-				oldValue, _ := oldRes[fieldName].([]interface{})
-
-				// Fetch the new value from ExpressionAttributeMap
-				newValue, ok := updateAtrr.ExpressionAttributeMap[newValueKey]
-				if ok {
-					if newValueList, ok := newValue.([]interface{}); ok {
-						// Append new values to the old list
-						mergedList := append(oldValue, newValueList...)
-						resp[fieldName] = mergedList
-					} else {
-						// Handle case where newValue is a single element
-						mergedList := append(oldValue, newValue)
-						resp[fieldName] = mergedList
-					}
-				} else {
-					// If newValue is not found in ExpressionAttributeMap, use placeholder
-					resp[fieldName] = oldValue
-				}
-				continue
-			}
-		}
-
 		// For assignment operations (SET)
 		if assignment {
 			v = strings.Split(p, " ")
@@ -258,7 +258,6 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 	for k, v := range updateAtrr.PrimaryKeyMap {
 		resp[k] = v
 	}
-
 	return resp, expr
 }
 

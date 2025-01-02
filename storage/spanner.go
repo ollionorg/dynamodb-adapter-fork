@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ahmetb/go-linq"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
@@ -33,7 +34,6 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 
 	"cloud.google.com/go/spanner"
-	"github.com/ahmetb/go-linq"
 	"google.golang.org/api/iterator"
 )
 
@@ -370,12 +370,6 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 					}
 					tmpMap[k] = existingVal + v2
 
-				case []interface{}:
-					tmpMap[k] = mergeLists(existingVal, v)
-
-				case map[string]interface{}:
-					tmpMap[k] = mergeMaps(existingVal, v)
-
 				case models.StringSet:
 					tmpMap[k] = mergeStringSets(existingVal, v)
 
@@ -432,24 +426,6 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 	})
 
 	return updatedObj, err
-}
-
-func mergeLists(existing, new interface{}) []interface{} {
-	list1 := existing.([]interface{})
-	list2, ok := new.([]interface{})
-	if !ok {
-		list2 = []interface{}{new}
-	}
-	return append(list1, list2...)
-}
-
-func mergeMaps(existing, new interface{}) map[string]interface{} {
-	map1 := existing.(map[string]interface{})
-	map2 := new.(map[string]interface{})
-	for k, v := range map2 {
-		map1[k] = v
-	}
-	return map1
 }
 
 func mergeStringSets(existing, new interface{}) models.StringSet {
@@ -1032,7 +1008,6 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				parsed := parseDynamoDBJSON(jsonValue.Value)
 				singleRow[k] = parsed
 			}
-			fmt.Printf("Parsed JSON Value for %s: %+v\n", k, singleRow[k])
 
 		}
 	}
