@@ -615,6 +615,7 @@ func BatchWriteItem(c *gin.Context) {
 			}
 
 			if putData.DynamoObject != nil {
+				fmt.Println("batch print put data-->", putData)
 				err = batchUpdateItems(c.Request.Context(), putData)
 				if err != nil {
 					for _, v := range value {
@@ -660,7 +661,8 @@ func batchUpdateItems(con context.Context, batchMetaUpdate models.BatchMetaUpdat
 	if err != nil {
 		return err
 	}
-	err = services.BatchPut(con, batchMetaUpdate.TableName, batchMetaUpdate.ArrAttrMap)
+	fmt.Println("batchMetaUpdate00000>", batchMetaUpdate)
+	err = services.BatchPut(con, batchMetaUpdate.TableName, batchMetaUpdate.ArrAttrMap, nil)
 	if err != nil {
 		return err
 	}

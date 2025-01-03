@@ -107,7 +107,6 @@ func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys 
 	}
 	tableName = utils.ChangeTableNameForSpanner(tableName)
 	client := s.getSpannerClient(tableName)
-	fmt.Println("client---->", client)
 	row, err := client.Single().ReadRow(ctx, tableName, key, projectionCols)
 	if err := errors.AssignError(err); err != nil {
 		return nil, nil, errors.New("ResourceNotFoundException", tableName, key, err)
@@ -163,11 +162,9 @@ func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]inte
 		if len(eval.Attributes) > 0 || expr != nil {
 			status, err := evaluateConditionalExpression(ctx, t, table, tmpMap, eval, expr)
 			if err != nil {
-				fmt.Println("errored here - 7")
 				return err
 			}
 			if !status {
-				fmt.Println("errored here - 8")
 				return errors.New("ConditionalCheckFailedException", eval, expr)
 			}
 		}
@@ -582,19 +579,81 @@ func (s Storage) SpannerRemove(ctx context.Context, table string, m map[string]i
 }
 
 // SpannerBatchPut - this insert or update data in batch
-func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[string]interface{}) error {
+func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[string]interface{}, spannerRow []map[string]interface{}) error {
 	mutations := make([]*spanner.Mutation, len(m))
 	ddl := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
 	table = utils.ChangeTableNameForSpanner(table)
 	for i := 0; i < len(m); i++ {
 		for k, v := range m[i] {
-			t, ok := ddl[k]
-			if t == "BYTES(MAX)" && ok {
-				ba, err := json.Marshal(v)
-				if err != nil {
-					return errors.New("ValidationException", err)
+			// t, ok := ddl[k]
+			// if t == "BYTES(MAX)" && ok {
+			// 	ba, err := json.Marshal(v)
+			// 	if err != nil {
+			// 		return errors.New("ValidationException", err)
+			// 	}
+			// 	m[i][k] = ba
+			// }
+			if strings.Contains(k, ".") {
+				pathfeilds := strings.Split(k, ".")
+				colName := pathfeilds[0]
+				t, ok := ddl[colName]
+				if t == "JSON" && ok {
+
+					var data map[string]interface{}
+					jsonData := spannerRow[i][colName]
+
+					// jsonData should be assumed to be a JSON object. If it's already marshaled, just convert it to a string.
+					jsonBytes, err := json.Marshal(jsonData) // Only if jsonData needs to be marshaled
+					if err != nil {
+						log.Fatalf("error marshalling JSON: %v", err)
+					}
+					fmt.Println("marshalled JSON before-->", string(jsonBytes))
+
+					// Unmarshal into a map for manipulation
+					if err := json.Unmarshal(jsonBytes, &data); err != nil {
+						log.Fatalf("Error unmarshalling JSON: %v", err)
+					}
+
+					// Updating the field
+					if updated := updateFieldByPath(data, k, v); updated {
+						fmt.Println("Update successful")
+					} else {
+						fmt.Println("Update failed: path not found")
+					}
+
+					// Marshal back to JSON after the update
+					updatedJSON, err := json.MarshalIndent(data, "", "  ")
+					if err != nil {
+						fmt.Println("Error marshaling JSON:", err)
+						return errors.New("Error marshaling JSON:", err)
+					}
+					fmt.Println("marshalled JSON after-->", string(updatedJSON)) // This is the properly formatted JSON
+
+					// Store the updated JSON in the map
+					strigngyfiedJSON := string(updatedJSON)
+					m[i][colName] = strings.ReplaceAll(strigngyfiedJSON, `\"`, `"`)
+					delete(m[i], k)
 				}
-				m[i][k] = ba
+			} else {
+				t, ok := ddl[k]
+				if t == "BYTES(MAX)" && ok {
+					ba, err := json.Marshal(v)
+					if err != nil {
+						fmt.Println("errored here - 9")
+						return errors.New("ValidationException", err)
+					}
+					m[i][k] = ba
+				}
+				if t == "JSON" && ok {
+					fmt.Println(" JSONv--->", v)
+					ba, err := json.MarshalIndent(v, "", "  ")
+					fmt.Println("marshalled JSON-->", string(ba))
+					if err != nil {
+						fmt.Println("errored here - 11")
+						return errors.New("ValidationException", err)
+					}
+					m[i][k] = string(ba)
+				}
 			}
 		}
 		mutations[i] = spanner.InsertOrUpdateMap(table, m[i])
@@ -702,9 +761,7 @@ func (s Storage) performUpdateOperation(ctx context.Context, t *spanner.ReadWrit
 			m[k] = ba
 		}
 		if t == "JSON" && ok {
-			fmt.Println("v--->", v)
-			ba, err := json.Marshal(v)
-			fmt.Println("marshalled JSON-->", string(ba))
+			ba, err := json.MarshalIndent(v, "", "  ")
 			if err != nil {
 				fmt.Println("errored here - 11")
 				return errors.New("ValidationException", err)
@@ -881,62 +938,76 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				return nil, spannerRow, errors.New("ValidationException", err, k)
 			}
 			if !s.IsNull() {
-				singleRow[k] = s.StringVal
+				fmt.Println("value of string", s.StringVal)
+				if strings.HasSuffix(s.StringVal, "=") {
+					res, err := parseBytes(r, i, k)
+					if err != nil {
+						continue
+					}
+					singleRow[k] = res[k]
+				} else {
+					singleRow[k] = s.StringVal
+				}
 			}
 		case "BYTES(MAX)":
-			var s []byte
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, spannerRow, errors.New("ValidationException", err, k)
-			}
-			if len(s) > 0 {
-				var m interface{}
-				err := json.Unmarshal(s, &m)
-				if err != nil {
-					logger.LogError(err, string(s))
-					singleRow[k] = string(s)
-					continue
-				}
-				val1, ok := m.(string)
-				if ok {
-					if base64Regexp.MatchString(val1) {
-						ba, err := base64.StdEncoding.DecodeString(val1)
-						if err == nil {
-							var sample interface{}
-							err = json.Unmarshal(ba, &sample)
-							if err == nil {
-								singleRow[k] = sample
-								continue
-							} else {
-								singleRow[k] = string(s)
-								continue
-							}
-						}
-					}
-				}
+			// var s []byte
+			// err := r.Column(i, &s)
+			// if err != nil {
+			// 	if strings.Contains(err.Error(), "ambiguous column name") {
+			// 		continue
+			// 	}
+			// 	return nil, spannerRow, errors.New("ValidationException", err, k)
+			// }
+			// if len(s) > 0 {
+			// 	var m interface{}
+			// 	err := json.Unmarshal(s, &m)
+			// 	if err != nil {
+			// 		logger.LogError(err, string(s))
+			// 		singleRow[k] = string(s)
+			// 		continue
+			// 	}
+			// 	val1, ok := m.(string)
+			// 	if ok {
+			// 		if base64Regexp.MatchString(val1) {
+			// 			ba, err := base64.StdEncoding.DecodeString(val1)
+			// 			if err == nil {
+			// 				var sample interface{}
+			// 				err = json.Unmarshal(ba, &sample)
+			// 				if err == nil {
+			// 					singleRow[k] = sample
+			// 					continue
+			// 				} else {
+			// 					singleRow[k] = string(s)
+			// 					continue
+			// 				}
+			// 			}
+			// 		}
+			// 	}
 
-				if mp, ok := m.(map[string]interface{}); ok {
-					for k, v := range mp {
-						if val, ok := v.(string); ok {
-							if base64Regexp.MatchString(val) {
-								ba, err := base64.StdEncoding.DecodeString(val)
-								if err == nil {
-									var sample interface{}
-									err = json.Unmarshal(ba, &sample)
-									if err == nil {
-										mp[k] = sample
-										m = mp
-									}
-								}
-							}
-						}
-					}
-				}
-				singleRow[k] = m
+			// 	if mp, ok := m.(map[string]interface{}); ok {
+			// 		for k, v := range mp {
+			// 			if val, ok := v.(string); ok {
+			// 				if base64Regexp.MatchString(val) {
+			// 					ba, err := base64.StdEncoding.DecodeString(val)
+			// 					if err == nil {
+			// 						var sample interface{}
+			// 						err = json.Unmarshal(ba, &sample)
+			// 						if err == nil {
+			// 							mp[k] = sample
+			// 							m = mp
+			// 						}
+			// 					}
+			// 				}
+			// 			}
+			// 		}
+			// 	}
+			// 	singleRow[k] = m
+			// }
+			res, err := parseBytes(r, i, k)
+			if err != nil {
+				continue
 			}
+			singleRow[k] = res[k]
 		case "INT64":
 			var s spanner.NullInt64
 			err := r.Column(i, &s)
@@ -1014,32 +1085,103 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 	}
 	return singleRow, spannerRow, nil
 }
+
+func parseBytes(r *spanner.Row, i int, k string) (map[string]interface{}, error) {
+	var s []byte
+	singleRowImg := make(map[string]interface{})
+	err := r.Column(i, &s)
+	if err != nil {
+		if strings.Contains(err.Error(), "ambiguous column name") {
+			return nil, err
+		}
+		return nil, errors.New("ValidationException", err, k)
+	}
+	if len(s) > 0 {
+		var m interface{}
+		err := json.Unmarshal(s, &m)
+		if err != nil {
+			logger.LogError(err, string(s))
+			singleRowImg[k] = string(s)
+		}
+		val1, ok := m.(string)
+		if ok {
+			if base64Regexp.MatchString(val1) {
+				ba, err := base64.StdEncoding.DecodeString(val1)
+				if err == nil {
+					var sample interface{}
+					err = json.Unmarshal(ba, &sample)
+					if err == nil {
+						singleRowImg[k] = sample
+
+					} else {
+						singleRowImg[k] = string(s)
+
+					}
+				}
+			}
+		}
+
+		if mp, ok := m.(map[string]interface{}); ok {
+			for k, v := range mp {
+				if val, ok := v.(string); ok {
+					if base64Regexp.MatchString(val) {
+						ba, err := base64.StdEncoding.DecodeString(val)
+						if err == nil {
+							var sample interface{}
+							err = json.Unmarshal(ba, &sample)
+							if err == nil {
+								mp[k] = sample
+								m = mp
+							}
+						}
+					}
+				}
+			}
+		}
+		singleRowImg[k] = m
+
+	}
+	return singleRowImg, err
+}
 func parseNestedJSON(value interface{}) interface{} {
 	switch v := value.(type) {
 	case map[string]interface{}:
 		m := make(map[string]interface{})
 		for key, val := range v {
+			fmt.Println(" map value -f v", val)
 			m[key] = parseNestedJSON(val)
+			fmt.Println("key,", key, m[key], m)
 		}
 		return map[string]interface{}{"M": m}
 	case []interface{}:
 		for i, item := range v {
+			fmt.Println(" interface value -f v", item)
 			v[i] = parseNestedJSON(item)
 		}
 		return map[string]interface{}{"L": v} // Assuming list items should be wrapped
 	case string:
 		// Additional handling for strings if necessary (e.g., base64 validation)
 		if base64Regexp.MatchString(v) {
-			if ba, err := base64.StdEncoding.DecodeString(v); err == nil {
-				var result interface{}
-				if json.Unmarshal(ba, &result) == nil {
-					return parseNestedJSON(result)
-				}
+			fmt.Println("me here-->")
+			ba, err := base64.StdEncoding.DecodeString(v)
+			if err != nil {
+				fmt.Println("me here- error->", err)
 			}
+			if err == nil {
+				fmt.Println(" base64Regexp value -f v", v)
+				return parseNestedJSON(ba)
+			}
+
 		}
-		return map[string]interface{}{"S": v}
+		// return map[string]interface{}{"S": v}
+		fmt.Println(" string value -f v", v)
+		return v
+	case []byte:
+		return v
 	default:
-		return map[string]interface{}{"S": fmt.Sprintf("%v", v)}
+		fmt.Println("default value -f v", v)
+		//return map[string]interface{}{"S": fmt.Sprintf("%v", v)}
+		return v
 	}
 }
 func checkInifinty(value float64, logData interface{}) error {

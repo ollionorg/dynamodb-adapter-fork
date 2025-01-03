@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -175,7 +176,7 @@ func BatchGet(ctx context.Context, tableName string, keyMapArray []map[string]in
 }
 
 // BatchPut writes bulk records to Spanner
-func BatchPut(ctx context.Context, tableName string, arrAttrMap []map[string]interface{}) error {
+func BatchPut(ctx context.Context, tableName string, arrAttrMap []map[string]interface{}, spannerRow []map[string]interface{}) error {
 	if len(arrAttrMap) <= 0 {
 		return errors.New("ValidationException")
 	}
@@ -189,7 +190,7 @@ func BatchPut(ctx context.Context, tableName string, arrAttrMap []map[string]int
 		return err
 	}
 	tableName = tableConf.ActualTable
-	err = storage.GetStorageInstance().SpannerBatchPut(ctx, tableName, arrAttrMap)
+	err = storage.GetStorageInstance().SpannerBatchPut(ctx, tableName, arrAttrMap, spannerRow)
 	if err != nil {
 		return err
 	}
@@ -316,12 +317,14 @@ func createSpannerQuery(query *models.Query, tPkey, pKey, sKey string) (spanner.
 	orderBy := parseSpannerSorting(query, isCountQuery, pKey, sKey)
 	limitClause := parseLimit(query, isCountQuery)
 	finalQuery := "SELECT " + colstr + " FROM " + tableName + " " + whereCondition + orderBy + limitClause + offsetString
+	fmt.Println("finalQuery scan-->", finalQuery)
 	stmt.SQL = finalQuery
 	h := fnv.New64a()
 	h.Write([]byte(finalQuery))
 	val := h.Sum64()
 	rs := strconv.FormatUint(val, 10)
 	stmt.Params = m
+	fmt.Println("Statement--->", stmt)
 	return stmt, cols, isCountQuery, offset, rs, nil
 }
 
@@ -396,7 +399,7 @@ func parseSpannerTableName(query *models.Query) string {
 func parseSpannerCondition(query *models.Query, pKey, sKey string) (string, map[string]interface{}) {
 	params := make(map[string]interface{})
 	whereClause := "WHERE "
-
+	fmt.Println("query--->", query)
 	if sKey != "" {
 		whereClause += sKey + " is not null "
 	}
@@ -404,11 +407,11 @@ func parseSpannerCondition(query *models.Query, pKey, sKey string) (string, map[
 	if query.RangeExp != "" {
 		whereClause, query.RangeExp = createWhereClause(whereClause, query.RangeExp, "rangeExp", query.RangeValMap, params)
 	}
-
+	fmt.Println("whereClause]]]]", whereClause)
 	if query.FilterExp != "" {
 		whereClause, query.FilterExp = createWhereClause(whereClause, query.FilterExp, "filterExp", query.RangeValMap, params)
 	}
-
+	fmt.Println("whereClause{{{{{}}}}}", whereClause)
 	if whereClause == "WHERE " {
 		whereClause = " "
 	}
@@ -418,8 +421,8 @@ func parseSpannerCondition(query *models.Query, pKey, sKey string) (string, map[
 func createWhereClause(whereClause string, expression string, queryVar string, RangeValueMap map[string]interface{}, params map[string]interface{}) (string, string) {
 	_, _, expression = utils.ParseBeginsWith(expression)
 	expression = strings.ReplaceAll(expression, "begins_with", "STARTS_WITH")
-
-	if whereClause != "WHERE " {
+	trimmedString := strings.TrimSpace(whereClause)
+	if whereClause != "WHERE " && !strings.HasSuffix(trimmedString, "AND") {
 		whereClause += " AND "
 	}
 	count := 1
@@ -431,7 +434,25 @@ func createWhereClause(whereClause string, expression string, queryVar string, R
 			count++
 		}
 	}
-	whereClause += expression
+	fmt.Println("==whereClause==", whereClause)
+	// Handle JSON paths if the expression is structured correctly
+	regexPattern := `^[a-zA-Z_][a-zA-Z0-9_.]*(\.[a-zA-Z_][a-zA-Z0-9_.]*)+\s*=\s*@\w+$`
+	re := regexp.MustCompile(regexPattern)
+	if re.MatchString(expression) {
+		fmt.Println("expression before -->", expression)
+		expression := strings.TrimSpace(expression)
+		expressionParts := strings.Split(expression, "=")
+		expressionParts[0] = strings.TrimSpace(expressionParts[0])
+		jsonFields := strings.Split(expressionParts[0], ".")
+
+		// Construct new JSON_VALUE expression
+		newExpression := fmt.Sprintf("JSON_VALUE(%s, '$.%s') = %s", jsonFields[0], strings.Join(jsonFields[1:], "."), expressionParts[1])
+		whereClause = whereClause + " " + newExpression
+		expression = newExpression
+	} else if expression != "" {
+		whereClause = whereClause + expression
+	}
+	fmt.Println("==whereClause== after", whereClause)
 	return whereClause, expression
 }
 
