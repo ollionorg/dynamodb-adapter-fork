@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"log"
 	"math"
 	"reflect"
@@ -172,7 +171,6 @@ func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]inte
 		for k, v := range tmpMap {
 			update[k] = v
 		}
-		fmt.Println("tmpMap===>", tmpMap)
 		return s.performPutOperation(ctx, t, table, tmpMap, spannerRow)
 	})
 
@@ -585,14 +583,6 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 	table = utils.ChangeTableNameForSpanner(table)
 	for i := 0; i < len(m); i++ {
 		for k, v := range m[i] {
-			// t, ok := ddl[k]
-			// if t == "BYTES(MAX)" && ok {
-			// 	ba, err := json.Marshal(v)
-			// 	if err != nil {
-			// 		return errors.New("ValidationException", err)
-			// 	}
-			// 	m[i][k] = ba
-			// }
 			if strings.Contains(k, ".") {
 				pathfeilds := strings.Split(k, ".")
 				colName := pathfeilds[0]
@@ -607,7 +597,6 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 					if err != nil {
 						log.Fatalf("error marshalling JSON: %v", err)
 					}
-					fmt.Println("marshalled JSON before-->", string(jsonBytes))
 
 					// Unmarshal into a map for manipulation
 					if err := json.Unmarshal(jsonBytes, &data); err != nil {
@@ -616,18 +605,16 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 
 					// Updating the field
 					if updated := updateFieldByPath(data, k, v); updated {
-						fmt.Println("Update successful")
+						log.Println("Update successful")
 					} else {
-						fmt.Println("Update failed: path not found")
+						log.Println("Update failed: path not found")
 					}
 
 					// Marshal back to JSON after the update
 					updatedJSON, err := json.MarshalIndent(data, "", "  ")
 					if err != nil {
-						fmt.Println("Error marshaling JSON:", err)
 						return errors.New("Error marshaling JSON:", err)
 					}
-					fmt.Println("marshalled JSON after-->", string(updatedJSON)) // This is the properly formatted JSON
 
 					// Store the updated JSON in the map
 					strigngyfiedJSON := string(updatedJSON)
@@ -639,17 +626,13 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 				if t == "BYTES(MAX)" && ok {
 					ba, err := json.Marshal(v)
 					if err != nil {
-						fmt.Println("errored here - 9")
 						return errors.New("ValidationException", err)
 					}
 					m[i][k] = ba
 				}
 				if t == "JSON" && ok {
-					fmt.Println(" JSONv--->", v)
 					ba, err := json.MarshalIndent(v, "", "  ")
-					fmt.Println("marshalled JSON-->", string(ba))
 					if err != nil {
-						fmt.Println("errored here - 11")
 						return errors.New("ValidationException", err)
 					}
 					m[i][k] = string(ba)
@@ -667,7 +650,6 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 
 func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTransaction, table string, m map[string]interface{}, spannerRow map[string]interface{}) error {
 	ddl := models.TableDDL[table]
-	fmt.Println("raw map==>", m)
 	for k, v := range m {
 		if strings.Contains(k, ".") {
 			pathfeilds := strings.Split(k, ".")
@@ -683,7 +665,6 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 				if err != nil {
 					log.Fatalf("error marshalling JSON: %v", err)
 				}
-				fmt.Println("marshalled JSON before-->", string(jsonBytes))
 
 				// Unmarshal into a map for manipulation
 				if err := json.Unmarshal(jsonBytes, &data); err != nil {
@@ -692,18 +673,16 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 
 				// Updating the field
 				if updated := updateFieldByPath(data, k, v); updated {
-					fmt.Println("Update successful")
+					log.Println("Update successful")
 				} else {
-					fmt.Println("Update failed: path not found")
+					log.Println("Update failed: path not found")
 				}
 
 				// Marshal back to JSON after the update
 				updatedJSON, err := json.MarshalIndent(data, "", "  ")
 				if err != nil {
-					fmt.Println("Error marshaling JSON:", err)
 					return errors.New("Error marshaling JSON:", err)
 				}
-				fmt.Println("marshalled JSON after-->", string(updatedJSON)) // This is the properly formatted JSON
 
 				// Store the updated JSON in the map
 				strigngyfiedJSON := string(updatedJSON)
@@ -715,29 +694,23 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 			if t == "BYTES(MAX)" && ok {
 				ba, err := json.Marshal(v)
 				if err != nil {
-					fmt.Println("errored here - 9")
 					return errors.New("ValidationException", err)
 				}
 				m[k] = ba
 			}
 			if t == "JSON" && ok {
-				fmt.Println(" JSONv--->", v)
 				ba, err := json.MarshalIndent(v, "", "  ")
-				fmt.Println("marshalled JSON-->", string(ba))
 				if err != nil {
-					fmt.Println("errored here - 11")
 					return errors.New("ValidationException", err)
 				}
 				m[k] = string(ba)
 			}
 		}
 	}
-	fmt.Println("final map--->", m)
 	mutation := spanner.InsertOrUpdateMap(table, m)
 	mutations := []*spanner.Mutation{mutation}
 	err := t.BufferWrite(mutations)
 	if e := errors.AssignError(err); e != nil {
-		fmt.Println("errored here - 10", e)
 		return e
 	}
 	return nil
@@ -755,7 +728,6 @@ func (s Storage) performUpdateOperation(ctx context.Context, t *spanner.ReadWrit
 		if t == "BYTES(MAX)" && ok {
 			ba, err := json.Marshal(v)
 			if err != nil {
-				fmt.Println("errored here - 9")
 				return errors.New("ValidationException", err)
 			}
 			m[k] = ba
@@ -763,7 +735,6 @@ func (s Storage) performUpdateOperation(ctx context.Context, t *spanner.ReadWrit
 		if t == "JSON" && ok {
 			ba, err := json.MarshalIndent(v, "", "  ")
 			if err != nil {
-				fmt.Println("errored here - 11")
 				return errors.New("ValidationException", err)
 			}
 			m[k] = string(ba)
@@ -774,7 +745,6 @@ func (s Storage) performUpdateOperation(ctx context.Context, t *spanner.ReadWrit
 	mutations := []*spanner.Mutation{mutation}
 	err := t.BufferWrite(mutations)
 	if e := errors.AssignError(err); e != nil {
-		fmt.Println("errored here - 10", e)
 		return e
 	}
 	return nil
@@ -938,7 +908,6 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				return nil, spannerRow, errors.New("ValidationException", err, k)
 			}
 			if !s.IsNull() {
-				fmt.Println("value of string", s.StringVal)
 				if strings.HasSuffix(s.StringVal, "=") {
 					res, err := parseBytes(r, i, k)
 					if err != nil {
@@ -950,59 +919,6 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				}
 			}
 		case "BYTES(MAX)":
-			// var s []byte
-			// err := r.Column(i, &s)
-			// if err != nil {
-			// 	if strings.Contains(err.Error(), "ambiguous column name") {
-			// 		continue
-			// 	}
-			// 	return nil, spannerRow, errors.New("ValidationException", err, k)
-			// }
-			// if len(s) > 0 {
-			// 	var m interface{}
-			// 	err := json.Unmarshal(s, &m)
-			// 	if err != nil {
-			// 		logger.LogError(err, string(s))
-			// 		singleRow[k] = string(s)
-			// 		continue
-			// 	}
-			// 	val1, ok := m.(string)
-			// 	if ok {
-			// 		if base64Regexp.MatchString(val1) {
-			// 			ba, err := base64.StdEncoding.DecodeString(val1)
-			// 			if err == nil {
-			// 				var sample interface{}
-			// 				err = json.Unmarshal(ba, &sample)
-			// 				if err == nil {
-			// 					singleRow[k] = sample
-			// 					continue
-			// 				} else {
-			// 					singleRow[k] = string(s)
-			// 					continue
-			// 				}
-			// 			}
-			// 		}
-			// 	}
-
-			// 	if mp, ok := m.(map[string]interface{}); ok {
-			// 		for k, v := range mp {
-			// 			if val, ok := v.(string); ok {
-			// 				if base64Regexp.MatchString(val) {
-			// 					ba, err := base64.StdEncoding.DecodeString(val)
-			// 					if err == nil {
-			// 						var sample interface{}
-			// 						err = json.Unmarshal(ba, &sample)
-			// 						if err == nil {
-			// 							mp[k] = sample
-			// 							m = mp
-			// 						}
-			// 					}
-			// 				}
-			// 			}
-			// 		}
-			// 	}
-			// 	singleRow[k] = m
-			// }
 			res, err := parseBytes(r, i, k)
 			if err != nil {
 				continue
@@ -1148,39 +1064,29 @@ func parseNestedJSON(value interface{}) interface{} {
 	case map[string]interface{}:
 		m := make(map[string]interface{})
 		for key, val := range v {
-			fmt.Println(" map value -f v", val)
 			m[key] = parseNestedJSON(val)
-			fmt.Println("key,", key, m[key], m)
 		}
 		return map[string]interface{}{"M": m}
 	case []interface{}:
 		for i, item := range v {
-			fmt.Println(" interface value -f v", item)
 			v[i] = parseNestedJSON(item)
 		}
 		return map[string]interface{}{"L": v} // Assuming list items should be wrapped
 	case string:
 		// Additional handling for strings if necessary (e.g., base64 validation)
 		if base64Regexp.MatchString(v) {
-			fmt.Println("me here-->")
 			ba, err := base64.StdEncoding.DecodeString(v)
 			if err != nil {
-				fmt.Println("me here- error->", err)
 			}
 			if err == nil {
-				fmt.Println(" base64Regexp value -f v", v)
 				return parseNestedJSON(ba)
 			}
 
 		}
-		// return map[string]interface{}{"S": v}
-		fmt.Println(" string value -f v", v)
 		return v
 	case []byte:
 		return v
 	default:
-		fmt.Println("default value -f v", v)
-		//return map[string]interface{}{"S": fmt.Sprintf("%v", v)}
 		return v
 	}
 }
@@ -1213,7 +1119,7 @@ func updateFieldByPath(data map[string]interface{}, path string, newValue interf
 			current = next
 		} else {
 			// Path is invalid if we can't find the next map level
-			fmt.Printf("Invalid path: key %s not found\n", key)
+			log.Printf("Invalid path: key %s not found\n", key)
 			return false
 		}
 	}

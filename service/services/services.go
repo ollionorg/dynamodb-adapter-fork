@@ -61,19 +61,16 @@ func getSpannerProjections(projectionExpression, table string, expressionAttribu
 func Put(ctx context.Context, tableName string, putObj map[string]interface{}, expr *models.UpdateExpressionCondition, conditionExp string, expressionAttr, oldRes map[string]interface{}, spannerRow map[string]interface{}) (map[string]interface{}, error) {
 	tableConf, err := config.GetTableConf(tableName)
 	if err != nil {
-		fmt.Println("errored here - 4")
 		return nil, err
 	}
 
 	tableName = tableConf.ActualTable
 	e, err := utils.CreateConditionExpression(conditionExp, expressionAttr)
 	if err != nil {
-		fmt.Println("errored here - 5")
 		return nil, err
 	}
 	newResp, err := storage.GetStorageInstance().SpannerPut(ctx, tableName, putObj, e, expr, spannerRow)
 	if err != nil {
-		fmt.Println("errored here - 6")
 		return nil, err
 	}
 
@@ -317,14 +314,12 @@ func createSpannerQuery(query *models.Query, tPkey, pKey, sKey string) (spanner.
 	orderBy := parseSpannerSorting(query, isCountQuery, pKey, sKey)
 	limitClause := parseLimit(query, isCountQuery)
 	finalQuery := "SELECT " + colstr + " FROM " + tableName + " " + whereCondition + orderBy + limitClause + offsetString
-	fmt.Println("finalQuery scan-->", finalQuery)
 	stmt.SQL = finalQuery
 	h := fnv.New64a()
 	h.Write([]byte(finalQuery))
 	val := h.Sum64()
 	rs := strconv.FormatUint(val, 10)
 	stmt.Params = m
-	fmt.Println("Statement--->", stmt)
 	return stmt, cols, isCountQuery, offset, rs, nil
 }
 
@@ -399,7 +394,6 @@ func parseSpannerTableName(query *models.Query) string {
 func parseSpannerCondition(query *models.Query, pKey, sKey string) (string, map[string]interface{}) {
 	params := make(map[string]interface{})
 	whereClause := "WHERE "
-	fmt.Println("query--->", query)
 	if sKey != "" {
 		whereClause += sKey + " is not null "
 	}
@@ -407,11 +401,9 @@ func parseSpannerCondition(query *models.Query, pKey, sKey string) (string, map[
 	if query.RangeExp != "" {
 		whereClause, query.RangeExp = createWhereClause(whereClause, query.RangeExp, "rangeExp", query.RangeValMap, params)
 	}
-	fmt.Println("whereClause]]]]", whereClause)
 	if query.FilterExp != "" {
 		whereClause, query.FilterExp = createWhereClause(whereClause, query.FilterExp, "filterExp", query.RangeValMap, params)
 	}
-	fmt.Println("whereClause{{{{{}}}}}", whereClause)
 	if whereClause == "WHERE " {
 		whereClause = " "
 	}
@@ -434,12 +426,10 @@ func createWhereClause(whereClause string, expression string, queryVar string, R
 			count++
 		}
 	}
-	fmt.Println("==whereClause==", whereClause)
 	// Handle JSON paths if the expression is structured correctly
 	regexPattern := `^[a-zA-Z_][a-zA-Z0-9_.]*(\.[a-zA-Z_][a-zA-Z0-9_.]*)+\s*=\s*@\w+$`
 	re := regexp.MustCompile(regexPattern)
 	if re.MatchString(expression) {
-		fmt.Println("expression before -->", expression)
 		expression := strings.TrimSpace(expression)
 		expressionParts := strings.Split(expression, "=")
 		expressionParts[0] = strings.TrimSpace(expressionParts[0])
@@ -452,7 +442,6 @@ func createWhereClause(whereClause string, expression string, queryVar string, R
 	} else if expression != "" {
 		whereClause = whereClause + expression
 	}
-	fmt.Println("==whereClause== after", whereClause)
 	return whereClause, expression
 }
 

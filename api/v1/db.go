@@ -140,7 +140,6 @@ func UpdateMeta(c *gin.Context) {
 func put(ctx context.Context, tableName string, putObj map[string]interface{}, expr *models.UpdateExpressionCondition, conditionExp string, expressionAttr map[string]interface{}) (map[string]interface{}, error) {
 	tableConf, err := config.GetTableConf(tableName)
 	if err != nil {
-		fmt.Println("errored here - 1")
 		return nil, err
 	}
 	sKey := tableConf.SortKey
@@ -149,12 +148,10 @@ func put(ctx context.Context, tableName string, putObj map[string]interface{}, e
 
 	oldResp, spannerRow, err := storage.GetStorageInstance().SpannerGet(ctx, tableName, putObj[pKey], putObj[sKey], nil)
 	if err != nil {
-		fmt.Println("errored here - 2")
 		return nil, err
 	}
 	res, err := services.Put(ctx, tableName, putObj, nil, conditionExp, expressionAttr, oldResp, spannerRow)
 	if err != nil {
-		fmt.Println("errored here - 3")
 		return nil, err
 	}
 	go services.StreamDataToThirdParty(oldResp, res, tableName)
@@ -615,7 +612,6 @@ func BatchWriteItem(c *gin.Context) {
 			}
 
 			if putData.DynamoObject != nil {
-				fmt.Println("batch print put data-->", putData)
 				err = batchUpdateItems(c.Request.Context(), putData)
 				if err != nil {
 					for _, v := range value {
@@ -661,7 +657,6 @@ func batchUpdateItems(con context.Context, batchMetaUpdate models.BatchMetaUpdat
 	if err != nil {
 		return err
 	}
-	fmt.Println("batchMetaUpdate00000>", batchMetaUpdate)
 	err = services.BatchPut(con, batchMetaUpdate.TableName, batchMetaUpdate.ArrAttrMap, nil)
 	if err != nil {
 		return err
