@@ -36,6 +36,7 @@ import (
 
 var operations = map[string]string{"SET": "(?i) SET ", "DELETE": "(?i) DELETE ", "ADD": "(?i) ADD ", "REMOVE": "(?i) REMOVE "}
 var byteSliceType = reflect.TypeOf([]byte(nil))
+var listAppendRegex = regexp.MustCompile(`list_append\((.*?),\s*(.*?)\)`)
 
 func between(value string, a string, b string) string {
 	// Get substring between two strings.
@@ -341,7 +342,7 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 
 func handleListAppend(ctx context.Context, operation string, updateAttr models.UpdateAttr, oldRes map[string]interface{}) (map[string]interface{}, map[string]interface{}, error) {
 	// Extract target attribute and values from operation
-	matches := regexp.MustCompile(`list_append\((.*?),\s*(.*?)\)`).FindStringSubmatch(operation)
+	matches := listAppendRegex.FindStringSubmatch(operation)
 	if len(matches) < 3 {
 		return nil, nil, fmt.Errorf("invalid list_append syntax: %s", operation)
 	}

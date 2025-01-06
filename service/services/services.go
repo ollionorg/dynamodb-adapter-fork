@@ -603,6 +603,7 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 	return updateResp, nil
 }
 
+// parseListRemoveTarget parses a list attribute target and its index from the action value.
 func parseListRemoveTarget(target string) (string, int) {
 	// Example: listAttribute[2]
 	re := regexp.MustCompile(`(.*)\[(\d+)\]`)
@@ -614,6 +615,7 @@ func parseListRemoveTarget(target string) (string, int) {
 	return target, -1
 }
 
+// parseMapRemoveTarget parses a map attribute and its key from the action value.
 func parseMapRemoveTarget(target string) (string, string) {
 	// Example: mapAttribute.key
 	parts := strings.SplitN(target, ".", 2)
@@ -622,6 +624,8 @@ func parseMapRemoveTarget(target string) (string, string) {
 	}
 	return target, ""
 }
+
+// removeListElement removes an element from a list at the specified index.
 func removeListElement(list []interface{}, idx int) []interface{} {
 	if idx < 0 || idx >= len(list) {
 		return list // Invalid index; return original list

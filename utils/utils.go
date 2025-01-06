@@ -115,7 +115,6 @@ func CreateConditionExpression(condtionExpression string, expressionAttr map[str
 	str = strings.ReplaceAll(str, " and ", " && ")
 	str = strings.ReplaceAll(str, " AND ", " && ")
 	str = strings.ReplaceAll(str, " <> ", " != ")
-
 	e.Cond, err = expr.Compile(str)
 	if err != nil {
 		return nil, errors.New("ConditionalCheckFailedException", err.Error(), str)

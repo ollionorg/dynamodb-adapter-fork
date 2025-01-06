@@ -784,7 +784,16 @@ func evaluateConditionalExpression(ctx context.Context, t *spanner.ReadWriteTran
 	}
 	if expr != nil {
 		for index := 0; index < len(expr.Field); index++ {
-			status := evaluateStatementFromRowMap(expr.Condition[index], expr.Field[index], rowMap)
+			colName := expr.Field[index]
+			if strings.HasPrefix(colName, "size(") {
+				// Extract attribute name from size function
+				sizeRegex := regexp.MustCompile(`size\((\w+)\)`)
+				matches := sizeRegex.FindStringSubmatch(colName)
+				if len(matches) == 2 {
+					colName = matches[1] // Extracted column name
+				}
+			}
+			status := evaluateStatementFromRowMap(expr.Condition[index], colName, rowMap)
 			tmp, ok := status.(bool)
 			if !ok || !tmp {
 				if v1, ok := expr.AddValues[expr.Field[index]]; ok {
@@ -836,6 +845,7 @@ func evaluateConditionalExpression(ctx context.Context, t *spanner.ReadWriteTran
 	if err != nil {
 		return false, err
 	}
+
 	return status, nil
 }
 
@@ -853,6 +863,30 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 		}
 		_, ok := rowMap[colName]
 		return ok
+	}
+	// Handle size() function
+	if strings.HasPrefix(conditionalExpression, "size(") {
+		sizeRegex := regexp.MustCompile(`size\((\w+)\)`)
+		matches := sizeRegex.FindStringSubmatch(conditionalExpression)
+		if len(matches) == 2 {
+			attributeName := matches[1]
+
+			// Check if the attribute exists in rowMap
+			val, ok := rowMap[attributeName]
+			if !ok {
+				return errors.New("Attribute not found in row")
+			}
+
+			// Ensure the attribute is a list and calculate its size
+			switch v := val.(type) {
+			case []interface{}:
+				return len(v) // Return the size of the list
+			default:
+				return errors.New("size() function is only valid for list attributes")
+			}
+		} else {
+			return errors.New("Invalid size() function syntax")
+		}
 	}
 	return rowMap[conditionalExpression]
 }
