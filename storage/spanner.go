@@ -648,6 +648,18 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 	return nil
 }
 
+// performPutOperation handles the insertion or update of data in a specified Spanner table.
+// It processes the provided mapping to account for JSON fields and handles it accordingly.
+//
+// Parameters:
+// - ctx: The context for managing timeouts and cancellation signals.
+// - t: A pointer to a ReadWriteTransaction that allows for transaction operations.
+// - table: The name of the table where the data will be inserted or updated.
+// - m: A map containing field name-value pairs to be written to the database.
+// - spannerRow: A map representing the current state of the row in the database, used for reading nested JSON fields.
+//
+// Returns:
+// - An error if the operation fails or nil if the operation succeeds.
 func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTransaction, table string, m map[string]interface{}, spannerRow map[string]interface{}) error {
 	ddl := models.TableDDL[table]
 	for k, v := range m {
@@ -707,40 +719,6 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 			}
 		}
 	}
-	mutation := spanner.InsertOrUpdateMap(table, m)
-	mutations := []*spanner.Mutation{mutation}
-	err := t.BufferWrite(mutations)
-	if e := errors.AssignError(err); e != nil {
-		return e
-	}
-	return nil
-}
-
-func (s Storage) performUpdateOperation(ctx context.Context, t *spanner.ReadWriteTransaction, table string, m map[string]interface{}) error {
-	ddl := models.TableDDL[table]
-	for k, v := range m {
-		if strings.Contains(k, ".") {
-			pathfeilds := strings.Split(k, ".")
-			k = pathfeilds[0]
-
-		}
-		t, ok := ddl[k]
-		if t == "BYTES(MAX)" && ok {
-			ba, err := json.Marshal(v)
-			if err != nil {
-				return errors.New("ValidationException", err)
-			}
-			m[k] = ba
-		}
-		if t == "JSON" && ok {
-			ba, err := json.MarshalIndent(v, "", "  ")
-			if err != nil {
-				return errors.New("ValidationException", err)
-			}
-			m[k] = string(ba)
-		}
-	}
-
 	mutation := spanner.InsertOrUpdateMap(table, m)
 	mutations := []*spanner.Mutation{mutation}
 	err := t.BufferWrite(mutations)
@@ -880,6 +858,13 @@ func isValidJSONObject(s string) error {
 	return err
 }
 
+func isValidBase64(s string) bool {
+	if _, err := base64.StdEncoding.DecodeString(s); err != nil {
+		return false
+	}
+	return true
+}
+
 // parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
 func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, map[string]interface{}, error) {
 	singleRow := make(map[string]interface{})
@@ -908,7 +893,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				return nil, spannerRow, errors.New("ValidationException", err, k)
 			}
 			if !s.IsNull() {
-				if strings.HasSuffix(s.StringVal, "=") {
+				if strings.HasSuffix(s.StringVal, "=") && isValidBase64(s.StringVal) {
 					res, err := parseBytes(r, i, k)
 					if err != nil {
 						continue

@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	expectedRowCount = 18
+	expectedRowCount = 23
 )
 
 var (
@@ -146,6 +146,13 @@ func createDatabase(w io.Writer, db string) error {
 				d_name 		 STRING(MAX),
 				d_specialization STRING(MAX),
 			) PRIMARY KEY (d_id)`,
+			`CREATE TABLE mapdynamo (
+				guid STRING(MAX) NOT NULL,
+				context STRING(MAX) NOT NULL,
+				contact_ranking_list STRING(MAX),
+				name STRING(MAX),
+				address JSON
+			) PRIMARY KEY (guid, context)`,
 		},
 	})
 	if err != nil {
@@ -312,7 +319,7 @@ func initData(w io.Writer, db string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		stmt := spanner.Statement{
 			SQL: `INSERT department (d_id, d_name, d_specialization) VALUES

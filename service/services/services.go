@@ -34,6 +34,10 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
+const (
+	regexPattern = `^[a-zA-Z_][a-zA-Z0-9_.]*(\.[a-zA-Z_][a-zA-Z0-9_.]*)+\s*=\s*@\w+$`
+)
+
 // getSpannerProjections makes a projection array of columns
 func getSpannerProjections(projectionExpression, table string, expressionAttributeNames map[string]string) []string {
 	if projectionExpression == "" {
@@ -427,7 +431,7 @@ func createWhereClause(whereClause string, expression string, queryVar string, R
 		}
 	}
 	// Handle JSON paths if the expression is structured correctly
-	regexPattern := `^[a-zA-Z_][a-zA-Z0-9_.]*(\.[a-zA-Z_][a-zA-Z0-9_.]*)+\s*=\s*@\w+$`
+
 	re := regexp.MustCompile(regexPattern)
 	if re.MatchString(expression) {
 		expression := strings.TrimSpace(expression)
