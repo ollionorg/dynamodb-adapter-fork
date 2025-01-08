@@ -1,3 +1,17 @@
+// Copyright (c) DataStax, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
@@ -30,12 +44,13 @@ var (
 	CREATE TABLE dynamodb_adapter_table_ddl (
 		column STRING(MAX) NOT NULL,
 		tableName STRING(MAX) NOT NULL,
-		dataType STRING(MAX) NOT NULL,
+		dynamoDataType STRING(MAX) NOT NULL,
 		originalColumn STRING(MAX) NOT NULL,
 		partitionKey STRING(MAX),
 		sortKey STRING(MAX),
 		spannerIndexName STRING(MAX),
-		actualTable STRING(MAX)
+		actualTable STRING(MAX),
+		spannerDataType STRING(MAX)
 	) PRIMARY KEY (tableName, column)`
 )
 
@@ -140,11 +155,12 @@ func generateInsertQueries(tableName string, client *dynamodb.Client) {
 	}
 
 	for column, dataType := range attributes {
+		spannerDataType := utils.ConvertDynamoTypeToSpannerType(dataType)
 		query := fmt.Sprintf(
 			`INSERT INTO dynamodb_adapter_table_ddl 
-			(column, tableName, dataType, originalColumn, partitionKey, sortKey, spannerIndexName, actualTable) 
-			VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');`,
-			column, tableName, dataType, column, partitionKey, sortKey, column, tableName,
+			(column, tableName, dataType, originalColumn, partitionKey, sortKey, spannerIndexName, actualTable, spannerDataType) 
+			VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');`,
+			column, tableName, dataType, column, partitionKey, sortKey, column, tableName, spannerDataType,
 		)
 		fmt.Println(query)
 	}
@@ -243,7 +259,7 @@ func migrateDynamoTableToSpanner(ctx context.Context, db, tableName string, clie
 	for column, dataType := range attributes {
 		mutations = append(mutations, spanner.InsertOrUpdate(
 			"dynamodb_adapter_table_ddl",
-			[]string{"column", "tableName", "dataType", "originalColumn", "partitionKey", "sortKey", "spannerIndexName", "actualTable"},
+			[]string{"column", "tableName", "dataType", "originalColumn", "partitionKey", "sortKey", "spannerIndexName", "actualTable", "spannerDataType"},
 			[]interface{}{column, tableName, dataType, column, partitionKey, sortKey, column, tableName},
 		))
 	}
