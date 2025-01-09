@@ -463,24 +463,6 @@ var (
 		Limit:         4,
 	}
 
-	// KeyconditionExpression
-	queryTestCase17 = models.Query{
-		TableName: "mapdynamo",
-		ExpressionAttributeNames: map[string]string{
-			"#a": "address",
-			"#b": "additional_details",
-			"#c": "additional_details_2",
-			"#d": "landmark_field"},
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":desiredValue": {S: aws.String("near water tank road")},
-			":guidValue":    {S: aws.String("123e4567-e89b-12d3-a456-value001")},
-		},
-		FilterExp: "#a.#b.#c.#d = :desiredValue",
-		RangeExp:  "#guid = :guidValue",
-		// ProjectionExpression: "#emp, first_name, #last ",
-		// RangeExp:             "#emp = :val1 ",
-	}
-
 	queryTestCaseOutput1 = `{"Count":5,"Items":[{"address":{"S":"Shamli"},"age":{"N":"10"},"emp_id":{"N":"1"},"first_name":{"S":"Marc"},"last_name":{"S":"Richards"}},{"address":{"S":"Ney York"},"age":{"N":"20"},"emp_id":{"N":"2"},"first_name":{"S":"Catalina"},"last_name":{"S":"Smith"}},{"address":{"S":"Pune"},"age":{"N":"30"},"emp_id":{"N":"3"},"first_name":{"S":"Alice"},"last_name":{"S":"Trentor"}},{"address":{"S":"Silicon Valley"},"age":{"N":"40"},"emp_id":{"N":"4"},"first_name":{"S":"Lea"},"last_name":{"S":"Martin"}},{"address":{"S":"London"},"age":{"N":"50"},"emp_id":{"N":"5"},"first_name":{"S":"David"},"last_name":{"S":"Lomond"}}]}`
 
 	queryTestCaseOutput2 = `{"Count":5,"Items":[{"emp_id":{"N":"1"},"first_name":{"S":"Marc"}},{"emp_id":{"N":"2"},"first_name":{"S":"Catalina"}},{"emp_id":{"N":"3"},"first_name":{"S":"Alice"}},{"emp_id":{"N":"4"},"first_name":{"S":"Lea"}},{"emp_id":{"N":"5"},"first_name":{"S":"David"}}]}`
@@ -508,8 +490,6 @@ var (
 	queryTestCaseOutput15 = `{"Count":1,"Items":[{"emp_id":{"N":"3"},"first_name":{"S":"Alice"},"last_name":{"S":"Trentor"}}]}`
 
 	queryTestCaseOutput16 = `{"Count":1,"Items":[]}`
-
-	queryTestCaseOutput17 = `{"Count":1,"Items":[{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"riverfront road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}]}`
 )
 
 // Test Data for Scan API
@@ -628,21 +608,6 @@ var (
 		Select:    "COUNT",
 	}
 	ScanTestCase13Output = `{"Count":5,"Items":[]}`
-
-	ScanTestCase14Name = "14: Filter Expression with ExpressionAttributeValues for Map"
-	ScanTestCase14     = models.ScanMeta{
-		TableName: "mapdynamo",
-		ExpressionAttributeNames: map[string]string{
-			"#a": "address",
-			"#b": "additional_details",
-			"#c": "additional_details_2",
-			"#d": "landmark_field"},
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":desiredValue": {S: aws.String("near water tank road")},
-		},
-		FilterExpression: "#a.#b.#c.#d = :desiredValue",
-	}
-	ScanTestCase14Output = `{"Count":1,"Items":[{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}],"LastEvaluatedKey":null}`
 )
 
 // Test Data for UpdateItem API
@@ -780,6 +745,24 @@ var (
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":age":  {N: aws.String("10")},
 			":val2": {N: aws.String("9")},
+		},
+	}
+	UpdateItemTestCase11Name = "6: UpdateItem for Map w"
+	UpdateItemTestCase11     = models.UpdateAttr{
+		TableName: "mapdynamo",
+		Key: map[string]*dynamodb.AttributeValue{
+			"guid":    {S: aws.String("123e4567-e89b-12d3-a456-value011")},
+			"context": {S: aws.String("user-profile")},
+		},
+		UpdateExpression: "SET #a.#b.#c.#d = :newValue",
+		ExpressionAttributeNames: map[string]string{
+			"#a": "address",
+			"#b": "additional_details",
+			"#c": "additional_details_2",
+			"#d": "landmark_field",
+		},
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":newValue": {S: aws.String("near water tank road")},
 		},
 	}
 )
@@ -1852,7 +1835,6 @@ func testQueryAPI(t *testing.T) {
 		createPostTestCase("count with other attributes present", "/v1", "Query", queryTestCaseOutput14, queryTestCase14),
 		createPostTestCase("Select with other than count", "/v1", "Query", queryTestCaseOutput15, queryTestCase15),
 		createPostTestCase("all attributes", "/v1", "Query", queryTestCaseOutput16, queryTestCase16),
-		// createPostTestCase("Map Query for Key Condition and Filter Expression", "/v1", "Query", queryTestCaseOutput17, queryTestCase17),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1919,7 +1901,6 @@ func testScanAPI(t *testing.T) {
 		createPostTestCase(ScanTestCase11Name, "/v1", "Query", ScanTestCase11Output, ScanTestCase11),
 		createPostTestCase(ScanTestCase12Name, "/v1", "Query", ScanTestCase12Output, ScanTestCase12),
 		createPostTestCase(ScanTestCase13Name, "/v1", "Query", ScanTestCase13Output, ScanTestCase13),
-		// createPostTestCase(ScanTestCase14Name, "/v1", "Scan", ScanTestCase14Output, ScanTestCase14),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1941,6 +1922,7 @@ func testUpdateItemAPI(t *testing.T) {
 		createPostTestCase(UpdateItemTestCase2Name, "/v1", "UpdateItem", UpdateItemTestCase2Output, UpdateItemTestCase2),
 		createPostTestCase(UpdateItemTestCase3Name, "/v1", "UpdateItem", UpdateItemTestCase3Output, UpdateItemTestCase3),
 		createPostTestCase(UpdateItemTestCase7Name, "/v1", "UpdateItem", UpdateItemTestCase7Output, UpdateItemTestCase7),
+		createStatusCheckPostTestCase(UpdateItemTestCase11Name, "/v1", "UpdateItem", http.StatusOK, UpdateItemTestCase11),
 	}
 	apitest.RunTests(t, tests)
 }
