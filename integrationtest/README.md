@@ -22,7 +22,8 @@ Running the integration tests will require the files present in the
     "dynamodb_adapter_table_ddl": "<spanner-instance-name>",
     "dynamodb_adapter_config_manager": "<spanner-instance-name>",
     "department": "<spanner-instance-name>",
-    "employee": "<spanner-instance-name>"
+    "employee": "<spanner-instance-name>",
+    "mapdynamo": "<spanner-instance-name>"
 }
 ```
 
@@ -51,8 +52,22 @@ Running the integration tests will require the files present in the
             "d_specialization": "S"
         },
         "indices": {}
+    },
+    "mapdynamo": {
+        "partitionKey": "guid",
+        "sortKey": "context",
+        "spannerIndexName": "guid",
+        "actualTable": "mapdynamo",
+        "attributeTypes": {
+            "guid": "S",
+            "context": "S",
+            "contact_ranking_list": "S",
+            "name": "S",
+            "address": "M"
+        },
+        "indices": {}
     }
-}
+  }
 ```
 
 ## Execute tests

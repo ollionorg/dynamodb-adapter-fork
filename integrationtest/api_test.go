@@ -82,6 +82,15 @@ var (
 		ProjectionExpression: "#emp, address",
 	}
 	getItemTest5Output = `{"Item":{"address":{"S":"Ney York"}}}`
+
+	getItemTestForMap = models.GetItemMeta{
+		TableName: "mapdynamo",
+		Key: map[string]*dynamodb.AttributeValue{
+			"guid":    {S: aws.String("123e4567-e89b-12d3-a456-value001")},
+			"context": {S: aws.String("user-profile")},
+		},
+	}
+	getItemTestForMapOutput = `{"Item":{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}}`
 )
 
 // params for TestGetBatchAPI
@@ -248,6 +257,18 @@ var (
 			},
 		},
 	}
+
+	TestGetBatch11Name = "11: Keys present for 1 table for Map Data"
+	TestGetBatch11     = models.BatchGetMeta{
+		RequestItems: map[string]models.BatchGetWithProjectionMeta{
+			"mapdynamo": {
+				Keys: []map[string]*dynamodb.AttributeValue{
+					{"guid": {S: aws.String("123e4567-e89b-12d3-a456-value001")}, "context": {S: aws.String("user-profile")}},
+				},
+			},
+		},
+	}
+	TestGetBatch11Output = `{"Responses":{"mapdynamo":[{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}]}}`
 )
 
 // test Data for Query API
@@ -442,6 +463,24 @@ var (
 		Limit:         4,
 	}
 
+	// KeyconditionExpression
+	queryTestCase17 = models.Query{
+		TableName: "mapdynamo",
+		ExpressionAttributeNames: map[string]string{
+			"#a": "address",
+			"#b": "additional_details",
+			"#c": "additional_details_2",
+			"#d": "landmark_field"},
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":desiredValue": {S: aws.String("near water tank road")},
+			":guidValue":    {S: aws.String("123e4567-e89b-12d3-a456-value001")},
+		},
+		FilterExp: "#a.#b.#c.#d = :desiredValue",
+		RangeExp:  "#guid = :guidValue",
+		// ProjectionExpression: "#emp, first_name, #last ",
+		// RangeExp:             "#emp = :val1 ",
+	}
+
 	queryTestCaseOutput1 = `{"Count":5,"Items":[{"address":{"S":"Shamli"},"age":{"N":"10"},"emp_id":{"N":"1"},"first_name":{"S":"Marc"},"last_name":{"S":"Richards"}},{"address":{"S":"Ney York"},"age":{"N":"20"},"emp_id":{"N":"2"},"first_name":{"S":"Catalina"},"last_name":{"S":"Smith"}},{"address":{"S":"Pune"},"age":{"N":"30"},"emp_id":{"N":"3"},"first_name":{"S":"Alice"},"last_name":{"S":"Trentor"}},{"address":{"S":"Silicon Valley"},"age":{"N":"40"},"emp_id":{"N":"4"},"first_name":{"S":"Lea"},"last_name":{"S":"Martin"}},{"address":{"S":"London"},"age":{"N":"50"},"emp_id":{"N":"5"},"first_name":{"S":"David"},"last_name":{"S":"Lomond"}}]}`
 
 	queryTestCaseOutput2 = `{"Count":5,"Items":[{"emp_id":{"N":"1"},"first_name":{"S":"Marc"}},{"emp_id":{"N":"2"},"first_name":{"S":"Catalina"}},{"emp_id":{"N":"3"},"first_name":{"S":"Alice"}},{"emp_id":{"N":"4"},"first_name":{"S":"Lea"}},{"emp_id":{"N":"5"},"first_name":{"S":"David"}}]}`
@@ -469,9 +508,11 @@ var (
 	queryTestCaseOutput15 = `{"Count":1,"Items":[{"emp_id":{"N":"3"},"first_name":{"S":"Alice"},"last_name":{"S":"Trentor"}}]}`
 
 	queryTestCaseOutput16 = `{"Count":1,"Items":[]}`
+
+	queryTestCaseOutput17 = `{"Count":1,"Items":[{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"riverfront road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}]}`
 )
 
-//Test Data for Scan API
+// Test Data for Scan API
 var (
 	ScanTestCase1Name = "1: Wrong URL"
 	ScanTestCase1     = models.ScanMeta{
@@ -587,9 +628,24 @@ var (
 		Select:    "COUNT",
 	}
 	ScanTestCase13Output = `{"Count":5,"Items":[]}`
+
+	ScanTestCase14Name = "14: Filter Expression with ExpressionAttributeValues for Map"
+	ScanTestCase14     = models.ScanMeta{
+		TableName: "mapdynamo",
+		ExpressionAttributeNames: map[string]string{
+			"#a": "address",
+			"#b": "additional_details",
+			"#c": "additional_details_2",
+			"#d": "landmark_field"},
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":desiredValue": {S: aws.String("near water tank road")},
+		},
+		FilterExpression: "#a.#b.#c.#d = :desiredValue",
+	}
+	ScanTestCase14Output = `{"Count":1,"Items":[{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}],"LastEvaluatedKey":null}`
 )
 
-//Test Data for UpdateItem API
+// Test Data for UpdateItem API
 var (
 
 	//200 Status check
@@ -728,7 +784,7 @@ var (
 	}
 )
 
-//Test Data for PutItem API
+// Test Data for PutItem API
 var (
 	//400 bad request
 	PutItemTestCase1Name = "1: only tablename passed"
@@ -837,9 +893,71 @@ var (
 			"age":    {N: aws.String("10")},
 		},
 	}
+
+	PutItemTestCase10Name = "10: Item to be inserted"
+	PutItemTestCase10     = models.Meta{
+		TableName: "mapdynamo",
+		Item: map[string]*dynamodb.AttributeValue{
+			"guid": {
+				S: aws.String("123e4567-e89b-12d3-a456-value001"),
+			},
+			"context": {
+				S: aws.String("user-profile"),
+			},
+			"contact_ranking_list": {
+				S: aws.String("1,2,3"),
+			},
+			"name": {
+				S: aws.String("Jane Smith"),
+			},
+			"address": {
+				M: map[string]*dynamodb.AttributeValue{
+					"permanent_address": {
+						S: aws.String("789 Elm St, Springfield, SP"),
+					},
+					"present_address": {
+						S: aws.String("101 Maple Ave, Metropolis, MP"),
+					},
+					"mobilenumber": {
+						N: aws.String("9035599089"),
+					},
+					"active": {
+						BOOL: aws.Bool(true),
+					},
+					"notes": {
+						B: []byte("YmluYXJ5X2RhdGE="),
+					},
+					"additional_details": {
+						M: map[string]*dynamodb.AttributeValue{
+							"landmark": {
+								S: aws.String("Near Central Park"),
+							},
+							"apartment_number": {
+								S: aws.String("5B"),
+							},
+							"landmark notes": {
+								B: []byte("YmluYXJ5X2RhdGE="),
+							},
+							"additional_details_2": {
+								M: map[string]*dynamodb.AttributeValue{
+									"landmark_field": {
+										S: aws.String("near water tank road"),
+									},
+									"landmark_field_number": {
+										N: aws.String("1001"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	PutItemTestCase10Output = `{"Attributes":{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}}`
 )
 
-//Test Data DeleteItem API
+// Test Data DeleteItem API
 var (
 	DeleteItemTestCase1Name = "1: Only TableName passed"
 	DeleteItemTestCase1     = models.Delete{
@@ -926,7 +1044,7 @@ var (
 	}
 )
 
-//test Data for BatchWriteItem API
+// test Data for BatchWriteItem API
 var (
 	BatchWriteItemTestCase1Name = "1: Only Table name passed"
 	BatchWriteItemTestCase1     = models.BatchWriteItem{
@@ -1250,6 +1368,128 @@ var (
 					},
 				},
 			},
+			"mapdynamo": {
+				{
+					PutReq: models.BatchPutItem{
+						Item: map[string]*dynamodb.AttributeValue{
+							"address": {
+								M: map[string]*dynamodb.AttributeValue{
+									"permanent_address": {
+										S: aws.String("789 Elm St, Springfield, SP"),
+									},
+									"present_address": {
+										S: aws.String("101 Maple Ave, Metropolis, MP"),
+									},
+									"mobilenumber": {
+										N: aws.String("9035599089"),
+									},
+									"active": {
+										BOOL: aws.Bool(true),
+									},
+									"notes": {
+										B: []byte("YmluYXJ5X2RhdGE="),
+									},
+									"additional_details": {
+										M: map[string]*dynamodb.AttributeValue{
+											"landmark": {
+												S: aws.String("Near Central Park"),
+											},
+											"apartment_number": {
+												S: aws.String("5B"),
+											},
+											"landmark notes": {
+												B: []byte("YmluYXJ5X2RhdGE="),
+											},
+											"additional_details_2": {
+												M: map[string]*dynamodb.AttributeValue{
+													"landmark_field": {
+														S: aws.String("street 7"),
+													},
+													"landmark_field_number": {
+														N: aws.String("1001"),
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+							"contact_ranking_list": {
+								S: aws.String("1,2,3"),
+							},
+							"context": {
+								S: aws.String("user-profile"),
+							},
+							"guid": {
+								S: aws.String("123e4567-e89b-12d3-a456-value002"),
+							},
+							"name": {
+								S: aws.String("Jane Smith"),
+							},
+						},
+					},
+				},
+				{
+					PutReq: models.BatchPutItem{
+						Item: map[string]*dynamodb.AttributeValue{
+							"address": {
+								M: map[string]*dynamodb.AttributeValue{
+									"permanent_address": {
+										S: aws.String("789 Elm St, Springfield, SP"),
+									},
+									"present_address": {
+										S: aws.String("101 Maple Ave, Metropolis, MP"),
+									},
+									"mobilenumber": {
+										N: aws.String("9035599089"),
+									},
+									"active": {
+										BOOL: aws.Bool(true),
+									},
+									"notes": {
+										B: []byte("YmluYXJ5X2RhdGE="),
+									},
+									"additional_details": {
+										M: map[string]*dynamodb.AttributeValue{
+											"landmark": {
+												S: aws.String("Near Central Park"),
+											},
+											"apartment_number": {
+												S: aws.String("5B"),
+											},
+											"landmark notes": {
+												B: []byte("YmluYXJ5X2RhdGE="),
+											},
+											"additional_details_2": {
+												M: map[string]*dynamodb.AttributeValue{
+													"landmark_field": {
+														S: aws.String("street 7"),
+													},
+													"landmark_field_number": {
+														N: aws.String("1001"),
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+							"contact_ranking_list": {
+								S: aws.String("1,2,3"),
+							},
+							"context": {
+								S: aws.String("user-profile"),
+							},
+							"guid": {
+								S: aws.String("123e4567-e89b-12d3-a456-value003"),
+							},
+							"name": {
+								S: aws.String("Jane Smith"),
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -1304,6 +1544,30 @@ var (
 			},
 		},
 	}
+
+	BatchWriteItemTestCase11Name = "11: Batch Delete Request for 1 tables"
+	BatchWriteItemTestCase11     = models.BatchWriteItem{
+		RequestItems: map[string][]models.BatchWriteSubItems{
+			"mapdynamo": {
+				{
+					DelReq: models.BatchDeleteItem{
+						Key: map[string]*dynamodb.AttributeValue{
+							"guid":    {S: aws.String("123e4567-e89b-12d3-a456-value002")},
+							"context": {S: aws.String("user-profile")},
+						},
+					},
+				},
+				{
+					DelReq: models.BatchDeleteItem{
+						Key: map[string]*dynamodb.AttributeValue{
+							"guid":    {S: aws.String("123e4567-e89b-12d3-a456-value003")},
+							"context": {S: aws.String("user-profile")},
+						},
+					},
+				},
+			},
+		},
+	}
 )
 
 func handlerInitFunc() *gin.Engine {
@@ -1327,6 +1591,7 @@ func handlerInitFunc() *gin.Engine {
 }
 
 func createPostTestCase(name, url, dynamoAction, outputString string, input interface{}) apitesting.APITestCase {
+	fmt.Println("hello world!", name)
 	return apitesting.APITestCase{
 		Name:    name,
 		ReqType: "POST",
@@ -1451,6 +1716,7 @@ func testGetItemAPI(t *testing.T) {
 		createPostTestCase("Crorect data with Projection param Testcase", "/v1", "GetItem", getItemTest3Output, getItemTest3),
 		createPostTestCase("Crorect data with  ExpressionAttributeNames Testcase", "/v1", "GetItem", getItemTest3Output, getItemTest4),
 		createPostTestCase("Crorect data with  ExpressionAttributeNames values not passed Testcase", "/v1", "GetItem", getItemTest5Output, getItemTest5),
+		createPostTestCase("Crorect Data TestCase for Map", "/v1", "GetItem", getItemTestForMapOutput, getItemTestForMap),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1500,6 +1766,7 @@ func testGetBatchAPI(t *testing.T) {
 		createPostTestCase(TestGetBatch7Name, "/v1", "BatchGetItem", TestGetBatch7Output, TestGetBatch7),
 		createPostTestCase(TestGetBatch8Name, "/v1", "BatchGetItem", TestGetBatch8Output, TestGetBatch8),
 		createPostTestCase(TestGetBatch9Name, "/v1", "BatchGetItem", TestGetBatch9Output, TestGetBatch9),
+		createPostTestCase(TestGetBatch11Name, "/v1", "BatchGetItem", TestGetBatch11Output, TestGetBatch11),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1585,6 +1852,7 @@ func testQueryAPI(t *testing.T) {
 		createPostTestCase("count with other attributes present", "/v1", "Query", queryTestCaseOutput14, queryTestCase14),
 		createPostTestCase("Select with other than count", "/v1", "Query", queryTestCaseOutput15, queryTestCase15),
 		createPostTestCase("all attributes", "/v1", "Query", queryTestCaseOutput16, queryTestCase16),
+		// createPostTestCase("Map Query for Key Condition and Filter Expression", "/v1", "Query", queryTestCaseOutput17, queryTestCase17),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1651,6 +1919,7 @@ func testScanAPI(t *testing.T) {
 		createPostTestCase(ScanTestCase11Name, "/v1", "Query", ScanTestCase11Output, ScanTestCase11),
 		createPostTestCase(ScanTestCase12Name, "/v1", "Query", ScanTestCase12Output, ScanTestCase12),
 		createPostTestCase(ScanTestCase13Name, "/v1", "Query", ScanTestCase13Output, ScanTestCase13),
+		// createPostTestCase(ScanTestCase14Name, "/v1", "Scan", ScanTestCase14Output, ScanTestCase14),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1693,6 +1962,7 @@ func testPutItemAPI(t *testing.T) {
 		createPostTestCase(PutItemTestCase3Name, "/v1", "PutItem", PutItemTestCase3Output, PutItemTestCase3),
 		createPostTestCase(PutItemTestCase4Name, "/v1", "PutItem", PutItemTestCase4Output, PutItemTestCase4),
 		createStatusCheckPostTestCase(PutItemTestCase9Name, "/v1", "PutItem", http.StatusOK, PutItemTestCase9),
+		createPostTestCase(PutItemTestCase10Name, "/v1", "PutItem", PutItemTestCase10Output, PutItemTestCase10),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1734,6 +2004,7 @@ func testBatchWriteItemAPI(t *testing.T) {
 		createStatusCheckPostTestCase(BatchWriteItemTestCase8Name, "/v1", "BatchWriteItem", http.StatusOK, BatchWriteItemTestCase8),
 		createStatusCheckPostTestCase(BatchWriteItemTestCase9Name, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCase9),
 		createStatusCheckPostTestCase(BatchWriteItemTestCase10Name, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCase10),
+		createStatusCheckPostTestCase(BatchWriteItemTestCase11Name, "/v1", "BatchWriteItem", http.StatusOK, BatchWriteItemTestCase11),
 	}
 	apitest.RunTests(t, tests)
 }

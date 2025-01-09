@@ -1,38 +1,20 @@
 {
-    "mapdynamo": {
-        "partitionKey": "guid",
-        "sortKey": "context",
-        "spannerIndexName": "guid",
-        "actualTable": "mapdynamo",
+    "tableName":{
+        "partitionKey":"primary key or Partition key",
+        "sortKey": "sorting key of dynamoDB adapter",
         "attributeTypes": {
-            "guid": "S",
-            "context": "S",
-            "contact_ranking_list": "S",
-            "name": "S",
-            "address":"M"
+			"ColInt64": "N",
+            "ColString": "S",
+            "ColBytes": "B",
+            "ColBool": "BOOL",
+            "ColDate": "S",
+            "ColTimestamp": "S"
         },
-        "indices": {}
-    },
-    "employee": {
-        "partitionKey": "emp_id",
-        "sortKey": "",
-        "attributeTypes": {
-            "emp_id": "N",
-            "first_name": "S",
-            "last_name": "S",
-            "address": "S",
-            "age": "N"
-        },
-        "indices": {}
-    },
-    "department": {
-        "partitionKey": "d_id",
-        "sortKey": "",
-        "attributeTypes": {
-            "d_id": "N",
-            "d_name": "S",
-            "d_specialization": "S"
-        },
-        "indices": {}
+        "indices": {
+			"indexName1": {
+				"sortKey": "sort key for indexName1",
+				"partitionKey": "partition key for indexName1"
+			}
+        }
     }
-  }
+}
