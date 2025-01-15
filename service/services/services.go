@@ -587,3 +587,27 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 	}
 	return updateResp, nil
 }
+
+// ExecuteStatement service
+func ExecuteStatement(ctx context.Context, scanData models.ExecuteStatement) (map[string]interface{}, error) {
+	query := models.Query{}
+	query.TableName = scanData.TableName
+	query.Limit = scanData.Limit
+	if query.Limit == 0 {
+		query.Limit = config.ConfigurationMap.QueryLimit
+	}
+	query.StartFrom = scanData.StartFrom
+	query.RangeValMap = scanData.ExpressionAttributeMap
+	query.IndexName = scanData.IndexName
+	query.FilterExp = scanData.FilterExpression
+	query.ExpressionAttributeNames = scanData.ExpressionAttributeNames
+	query.OnlyCount = scanData.OnlyCount
+	query.ProjectionExpression = scanData.ProjectionExpression
+
+	for k, v := range query.ExpressionAttributeNames {
+		query.FilterExp = strings.ReplaceAll(query.FilterExp, k, v)
+	}
+
+	rs, _, err := QueryAttributes(ctx, query)
+	return rs, err
+}

@@ -17,6 +17,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -58,8 +59,10 @@ func RouteRequest(c *gin.Context) {
 		Scan(c)
 	case "UpdateItem":
 		Update(c)
+	case "ExecuteStatement":
+		ExecuteStatement(c)
 	default:
-		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of" + amzTarget).
+		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of"+amzTarget).
 			HTTPResponse("X-Amz-Target Header not supported"))
 	}
 }
@@ -662,4 +665,25 @@ func batchUpdateItems(con context.Context, batchMetaUpdate models.BatchMetaUpdat
 		return err
 	}
 	return nil
+}
+
+func ExecuteStatement(c *gin.Context) {
+	defer PanicHandler(c)
+	defer c.Request.Body.Close()
+	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
+	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
+	if err != nil || spanContext == nil {
+		logger.LogDebug(err)
+	}
+	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
+	c.Request = c.Request.WithContext(ctx)
+	defer span.Finish()
+	addParentSpanID(c, span)
+	var execStmt models.ExecuteStatement
+	if err := c.ShouldBindJSON(&execStmt); err != nil {
+		c.JSON(errors.New("ValidationException", err).HTTPResponse(execStmt))
+	} else {
+		request, _ := json.Marshal(execStmt)
+		fmt.Println("ExecuteStatement--->", string(request))
+	}
 }
