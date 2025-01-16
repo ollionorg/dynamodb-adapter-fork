@@ -22,17 +22,17 @@ import (
 	"strings"
 	"time"
 
+	otelgo "github.com/cloudspannerecosystem/dynamodb-adapter/otel"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
-
-	otelgo "github.com/cloudspannerecosystem/dynamodb-adapter/otel"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/service/services"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // InitDBAPI - routes for apis
@@ -377,71 +377,45 @@ func GetItemMeta(c *gin.Context) {
 // @Router /batchGetWithProjection/ [post]
 // @Failure 401 {object} gin.H "{"errorMessage":"API access not allowed","errorCode": "E0005"}"
 func BatchGetItem(c *gin.Context) {
-	startTime := time.Now()
-	ctx := c.Request.Context()
-	var err error
+	start := time.Now()
 	defer PanicHandler(c)
 	defer c.Request.Body.Close()
-	otelInstance := models.GlobalProxy.OtelInst
-	if otelInstance == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "OpenTelemetry instance not initialized"})
-		return
-	}
 	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
 	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
 	if err != nil || spanContext == nil {
 		logger.LogDebug(err)
 	}
-	requestSpan, requestCtx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
-	c.Request = c.Request.WithContext(requestCtx)
-	defer requestSpan.Finish()
-	addParentSpanID(c, requestSpan)
-	ctx, span := models.GlobalProxy.OtelInst.StartSpan(ctx, "Batch GetItem", []attribute.KeyValue{
-		attribute.String("request.method", c.Request.Method),
-		attribute.String("request.url", c.Request.URL.Path),
-	})
-	defer models.GlobalProxy.OtelInst.EndSpan(span)
-	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "Batch GetItem", startTime, err)
-	otelgo.AddAnnotation(ctx, "Starting BatchGetItem processing")
+	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
+	c.Request = c.Request.WithContext(ctx)
+	defer span.Finish()
+	span = addParentSpanID(c, span)
+
 	var batchGetMeta models.BatchGetMeta
 	if err1 := c.ShouldBindJSON(&batchGetMeta); err1 != nil {
-		otelgo.AddAnnotation(ctx, "BatchGetMeta validation failed")
 		c.JSON(errors.New("ValidationException", err1).HTTPResponse(batchGetMeta))
 	} else {
-
-		otelgo.AddAnnotation(ctx, "BatchGetMeta validation succeeded")
 		output := make(map[string]interface{})
 
 		for k, v := range batchGetMeta.RequestItems {
 			batchGetWithProjectionMeta := v
 			batchGetWithProjectionMeta.TableName = k
 			logger.LogDebug(batchGetWithProjectionMeta)
-
-			otelgo.AddAnnotation(ctx, fmt.Sprintf("Processing table: %s", k))
-
 			if allow := services.MayIReadOrWrite(batchGetWithProjectionMeta.TableName, false, ""); !allow {
-
-				otelgo.AddAnnotation(ctx, fmt.Sprintf("Permission denied for table: %s", k))
 				c.JSON(http.StatusOK, []gin.H{})
 				return
 			}
 			var singleOutput interface{}
 			singleOutput, span, err = batchGetDataSingleTable(c.Request.Context(), batchGetWithProjectionMeta, span)
 			if err != nil {
-				otelgo.AddAnnotation(ctx, fmt.Sprintf("Error fetching data for table: %s", k))
 				c.JSON(errors.HTTPResponse(err, batchGetWithProjectionMeta))
 			}
 			currOutput, err := ChangeMaptoDynamoMap(singleOutput)
 			if err != nil {
-				otelgo.AddAnnotation(ctx, fmt.Sprintf("Error transforming data for table: %s", k))
 				c.JSON(errors.HTTPResponse(err, batchGetWithProjectionMeta))
 			}
 			output[k] = currOutput["L"]
-
-			otelgo.AddAnnotation(ctx, fmt.Sprintf("Successfully processed table: %s", k))
 		}
 
-		otelgo.AddAnnotation(ctx, "BatchGetItem processing completed")
 		c.JSON(http.StatusOK, map[string]interface{}{"Responses": output})
 
 		if time.Since(start) > time.Second*1 {
@@ -449,7 +423,6 @@ func BatchGetItem(c *gin.Context) {
 		}
 	}
 }
-
 func batchGetDataSingleTable(ctx context.Context, batchGetWithProjectionMeta models.BatchGetWithProjectionMeta, span opentracing.Span) (interface{}, opentracing.Span, error) {
 
 	var err1 error

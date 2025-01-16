@@ -17,16 +17,14 @@
 package config
 
 import (
-	"encoding/json"
+	"fmt"
 	"os"
-	"strings"
 	"sync"
 
-	rice "github.com/GeertJohan/go.rice"
+	"gopkg.in/yaml.v3"
+
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
-	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
-	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
 // Configuration struct
@@ -38,9 +36,6 @@ type Configuration struct {
 
 // ConfigurationMap pointer
 var ConfigurationMap *Configuration
-
-// DbConfigMap dynamo to Spanner
-var DbConfigMap map[string]models.TableConfig
 
 var once sync.Once
 
@@ -79,7 +74,7 @@ func loadConfig(filename string) (*models.Config, error) {
 
 // GetTableConf returns table configuration from global map object
 func GetTableConf(tableName string) (models.TableConfig, error) {
-	tableConf, ok := DbConfigMap[tableName]
+	tableConf, ok := models.DbConfigMap[tableName]
 	if !ok {
 		return models.TableConfig{}, errors.New("ResourceNotFoundException", tableName)
 	}
@@ -88,9 +83,10 @@ func GetTableConf(tableName string) (models.TableConfig, error) {
 		return tableConf, nil
 	} else if tableConf.ActualTable != "" {
 		actualTable := tableConf.ActualTable
-		tableConf = DbConfigMap[actualTable]
+		tableConf = models.DbConfigMap[actualTable]
 		tableConf.ActualTable = actualTable
 		return tableConf, nil
 	}
+	fmt.Println(models.GlobalConfig, tableName)
 	return models.TableConfig{}, errors.New("ResourceNotFoundException", tableName)
 }

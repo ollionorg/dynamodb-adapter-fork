@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"regexp"
@@ -119,6 +120,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
 	}
+	fmt.Println(stmt, ctx, table)
 	itr := s.getSpannerClient(table).Single().WithTimestampBound(spanner.ExactStaleness(time.Second*10)).Query(ctx, stmt)
 	defer itr.Stop()
 	allRows := []map[string]interface{}{}
@@ -733,7 +735,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 			return true
 		}
 		_, ok := rowMap[colName]
-		return !ok 
+		return !ok
 	}
 	if strings.HasPrefix(conditionalExpression, "attribute_exists") || strings.HasPrefix(conditionalExpression, "if_exists") {
 		if len(rowMap) == 0 {
@@ -745,7 +747,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 	return rowMap[conditionalExpression]
 }
 
-//parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
+// parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
 func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, error) {
 	singleRow := make(map[string]interface{})
 	if r == nil {

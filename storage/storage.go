@@ -28,7 +28,6 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	otelgo "github.com/cloudspannerecosystem/dynamodb-adapter/otel"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
-	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 )
@@ -45,7 +44,7 @@ func InitializeDriver(ctx context.Context) error {
 	if models.GlobalConfig == nil {
 		return fmt.Errorf("GlobalConfig is not initialized")
 	}
-
+	fmt.Println("Initializing storage driver", models.GlobalConfig)
 	storage = &Storage{
 		spannerClient: make(map[string]*spanner.Client),
 	}
@@ -132,10 +131,11 @@ func GetStorageInstance() *Storage {
 			InitializeDriver(context.Background())
 		}
 	})
-
+	fmt.Println("Storage instance created", storage)
 	return storage
 }
 
 func (s Storage) getSpannerClient(tableName string) *spanner.Client {
-	return s.spannerClient[models.SpannerTableMap[utils.ChangeTableNameForSpanner(tableName)]]
+	fmt.Println("test", models.SpannerTableMap)
+	return s.spannerClient[models.GlobalConfig.Spanner.InstanceID]
 }
