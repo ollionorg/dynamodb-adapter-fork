@@ -36,7 +36,6 @@ import (
 // @host localhost:9050
 // @BasePath /v1
 func main() {
-	//box := rice.MustFindBox("config-files")
 	initErr := initializer.InitAll()
 	if initErr != nil {
 		log.Fatalln(initErr)
