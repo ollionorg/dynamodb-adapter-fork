@@ -37,6 +37,10 @@ import (
 var operations = map[string]string{"SET": "(?i) SET ", "DELETE": "(?i) DELETE ", "ADD": "(?i) ADD ", "REMOVE": "(?i) REMOVE "}
 var byteSliceType = reflect.TypeOf([]byte(nil))
 var listAppendRegex = regexp.MustCompile(`list_append\((.*?),\s*(.*?)\)`)
+var (
+	listRegex      = regexp.MustCompile(`list_append\(([^,]+),\s*([^\)]+)\)`)
+	listIndexRegex = regexp.MustCompile(`(\w+)\[(\d+)\]`)
+)
 
 func between(value string, a string, b string) string {
 	// Get substring between two strings.
@@ -87,6 +91,9 @@ func deleteEmpty(s []string) []string {
 	return r
 }
 
+// parseActionValue parses an action value string and constructs a map of attributes to update,
+// as well as an update expression condition, based on the provided parameters.
+// Example of actionValue: "guid = :new_guid" or "list_append(guid, :new_values)"
 func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignment bool, oldRes map[string]interface{}) (map[string]interface{}, *models.UpdateExpressionCondition) {
 
 	expr := parseUpdateExpresstion(actionValue)
@@ -136,8 +143,7 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 		}
 
 		if strings.Contains(p, "list_append") {
-			re := regexp.MustCompile(`list_append\(([^,]+),\s*([^\)]+)\)`)
-			matches := re.FindStringSubmatch(p)
+			matches := listRegex.FindStringSubmatch(p)
 			if len(matches) == 3 {
 				fieldName := matches[1]
 				newValueKey := matches[2]
@@ -178,34 +184,31 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 				continue
 			}
 
-			// Check for list index, e.g., guid[1]
-			if strings.Contains(field, "[") && strings.Contains(field, "]") {
-				re := regexp.MustCompile(`(\w+)\[(\d+)\]`)
-				matches := re.FindStringSubmatch(field)
-				if len(matches) == 3 {
-					listField := matches[1]
-					index, err := strconv.Atoi(matches[2])
-					if err != nil {
-						continue
-					}
-
-					// Retrieve the old list and modify the specified index
-					oldList, ok := oldRes[listField].([]interface{})
-					if !ok {
-						continue
-					}
-
-					// Validate index bounds
-					if index < 0 || index >= len(oldList) {
-						continue
-					}
-
-					updatedList := make([]interface{}, len(oldList))
-					copy(updatedList, oldList)
-					updatedList[index] = value
-					resp[listField] = updatedList
+			// Handle SET with list index, e.g., guid[1] = :new_value
+			matches := listIndexRegex.FindStringSubmatch(field)
+			if len(matches) == 3 {
+				listField := matches[1]
+				index, err := strconv.Atoi(matches[2])
+				if err != nil {
 					continue
 				}
+
+				// Retrieve the old list and modify the specified index
+				oldList, ok := oldRes[listField].([]interface{})
+				if !ok {
+					continue
+				}
+
+				// Validate index bounds
+				if index < 0 || index >= len(oldList) {
+					continue
+				}
+
+				updatedList := make([]interface{}, len(oldList))
+				copy(updatedList, oldList)
+				updatedList[index] = value
+				resp[listField] = updatedList
+				continue
 			}
 
 			// Handle simple SET assignments
