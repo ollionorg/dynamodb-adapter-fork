@@ -71,14 +71,19 @@ func main() {
 		"projects/%s/instances/%s/databases/%s",
 		config.Spanner.ProjectID, config.Spanner.InstanceID, config.Spanner.DatabaseName,
 	)
-
+	ctx := context.Background()
+	adminClient, err := Admindatabase.NewDatabaseAdminClient(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create Spanner Admin client: %v", err)
+	}
+	defer adminClient.Close()
 	// Decide execution mode based on the dry-run flag
 	if *dryRun {
 		fmt.Println("-- Dry Run Mode: Generating Spanner DDL and Insert Queries Only --")
-		runDryRun()
+		runDryRun(config.Spanner.DynamoQueryLimit)
 	} else {
 		fmt.Println("-- Executing Setup on Spanner --")
-		executeSetup(databaseName)
+		executeSetup(ctx, adminClient, databaseName)
 	}
 }
 
@@ -98,7 +103,7 @@ func loadConfig(filename string) (*models.Config, error) {
 }
 
 // Run in dry-run mode to output DDL and insert queries without making changes
-func runDryRun() {
+func runDryRun(limit int32) {
 	fmt.Println("-- Spanner DDL to create the adapter table --")
 	fmt.Println(adapterTableDDL)
 
@@ -123,7 +128,7 @@ func runDryRun() {
 
 // Generate DDL statement for a specific DynamoDB table
 func generateTableDDL(tableName string, client *dynamodb.Client) string {
-	attributes, partitionKey, sortKey, err := fetchTableAttributes(client, tableName)
+	attributes, partitionKey, sortKey, err := fetchTableAttributes(client, tableName, models.GlobalConfig.Spanner.DynamoQueryLimit)
 	if err != nil {
 		log.Printf("Failed to fetch attributes for table %s: %v", tableName, err)
 		return ""
@@ -148,7 +153,7 @@ func generateTableDDL(tableName string, client *dynamodb.Client) string {
 
 // Generate insert queries for a given DynamoDB table
 func generateInsertQueries(tableName string, client *dynamodb.Client) {
-	attributes, partitionKey, sortKey, err := fetchTableAttributes(client, tableName)
+	attributes, partitionKey, sortKey, err := fetchTableAttributes(client, tableName, models.GlobalConfig.Spanner.DynamoQueryLimit)
 	if err != nil {
 		log.Printf("Failed to fetch attributes for table %s: %v", tableName, err)
 		return
@@ -167,16 +172,15 @@ func generateInsertQueries(tableName string, client *dynamodb.Client) {
 }
 
 // Execute the setup process: create database, tables, and migrate data
-func executeSetup(databaseName string) {
-	ctx := context.Background()
+func executeSetup(ctx context.Context, adminClient *Admindatabase.DatabaseAdminClient, databaseName string) {
 
 	// Create the Spanner database if it doesn't exist
-	if err := createDatabase(ctx, databaseName); err != nil {
+	if err := createDatabase(ctx, adminClient, databaseName); err != nil {
 		log.Fatalf("Failed to create database: %v", err)
 	}
 
 	// Create the adapter table
-	if err := createTable(ctx, databaseName, adapterTableDDL); err != nil {
+	if err := createTable(ctx, adminClient, databaseName, adapterTableDDL); err != nil {
 		log.Fatalf("Failed to create adapter table: %v", err)
 	}
 
@@ -190,7 +194,7 @@ func executeSetup(databaseName string) {
 	for _, tableName := range tables {
 		// Generate and apply table-specific DDL
 		ddl := generateTableDDL(tableName, client)
-		if err := createTable(ctx, databaseName, ddl); err != nil {
+		if err := createTable(ctx, adminClient, databaseName, ddl); err != nil {
 			log.Printf("Failed to create table %s: %v", tableName, err)
 			continue
 		}
@@ -212,7 +216,7 @@ func migrateDynamoTableToSpanner(ctx context.Context, db, tableName string, clie
 	models.SpannerTableMap[tableName] = config.Spanner.InstanceID
 
 	// Fetch table attributes and keys from DynamoDB
-	attributes, partitionKey, sortKey, err := fetchTableAttributes(client, tableName)
+	attributes, partitionKey, sortKey, err := fetchTableAttributes(client, tableName, int32(config.Spanner.DynamoQueryLimit))
 	if err != nil {
 		return fmt.Errorf("failed to fetch attributes for table %s: %v", tableName, err)
 	}
@@ -274,20 +278,13 @@ func migrateDynamoTableToSpanner(ctx context.Context, db, tableName string, clie
 }
 
 // createDatabase creates a new Spanner database if it does not exist.
-func createDatabase(ctx context.Context, db string) error {
+func createDatabase(ctx context.Context, adminClient *Admindatabase.DatabaseAdminClient, db string) error {
 	// Parse database ID
 	matches := regexp.MustCompile("^(.*)/databases/(.*)$").FindStringSubmatch(db)
 	if matches == nil || len(matches) != 3 {
 		return fmt.Errorf("invalid database ID: %s", db)
 	}
 	parent, dbName := matches[1], matches[2]
-
-	// Create Spanner Admin client
-	adminClient, err := Admindatabase.NewDatabaseAdminClient(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create Spanner Admin client: %v", err)
-	}
-	defer adminClient.Close()
 
 	// Initiate database creation
 	op, err := adminClient.CreateDatabase(ctx, &database.CreateDatabaseRequest{
@@ -311,7 +308,7 @@ func createDatabase(ctx context.Context, db string) error {
 }
 
 // createTable creates a table in Spanner if it does not already exist.
-func createTable(ctx context.Context, db, ddl string) error {
+func createTable(ctx context.Context, adminClient *Admindatabase.DatabaseAdminClient, db, ddl string) error {
 	// Extract table name from DDL
 	re := regexp.MustCompile(`CREATE TABLE (\w+)`)
 	matches := re.FindStringSubmatch(ddl)
@@ -319,13 +316,6 @@ func createTable(ctx context.Context, db, ddl string) error {
 		return fmt.Errorf("unable to extract table name from DDL: %s", ddl)
 	}
 	tableName := matches[1]
-
-	// Create Spanner Admin client
-	adminClient, err := Admindatabase.NewDatabaseAdminClient(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create Spanner Admin client: %v", err)
-	}
-	defer adminClient.Close()
 
 	// Create Spanner client
 	client, err := spanner.NewClient(ctx, db)
@@ -377,7 +367,7 @@ func listDynamoTables(client *dynamodb.Client) ([]string, error) {
 
 // fetchTableAttributes retrieves attributes and key schema (partition and sort keys) of a DynamoDB table.
 // It describes the table to get its key schema and scans the table to infer attribute types.
-func fetchTableAttributes(client *dynamodb.Client, tableName string) (map[string]string, string, string, error) {
+func fetchTableAttributes(client *dynamodb.Client, tableName string, limit int32) (map[string]string, string, string, error) {
 	// Describe the DynamoDB table to get its key schema and attributes.
 	output, err := client.DescribeTable(context.TODO(), &dynamodb.DescribeTableInput{
 		TableName: aws.String(tableName),
@@ -403,6 +393,7 @@ func fetchTableAttributes(client *dynamodb.Client, tableName string) (map[string
 	// Scan the table to retrieve data and infer attribute types.
 	scanOutput, err := client.Scan(context.TODO(), &dynamodb.ScanInput{
 		TableName: aws.String(tableName),
+		Limit:     aws.Int32(limit),
 	})
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to scan table %s: %w", tableName, err)

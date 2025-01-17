@@ -23,10 +23,11 @@ import (
 )
 
 type SpannerConfig struct {
-	ProjectID    string `yaml:"project_id"`
-	InstanceID   string `yaml:"instance_id"`
-	DatabaseName string `yaml:"database_name"`
-	QueryLimit   int64  `yaml:"query_limit"`
+	ProjectID        string `yaml:"project_id"`
+	InstanceID       string `yaml:"instance_id"`
+	DatabaseName     string `yaml:"database_name"`
+	QueryLimit       int64  `yaml:"query_limit"`
+	DynamoQueryLimit int32  `yaml:"dynamo_query_limit"` //dynamo_query_limit
 }
 
 type Config struct {
