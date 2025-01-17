@@ -44,7 +44,6 @@ func InitializeDriver(ctx context.Context) error {
 	if models.GlobalConfig == nil {
 		return fmt.Errorf("GlobalConfig is not initialized")
 	}
-	fmt.Println("Initializing storage driver", models.GlobalConfig)
 	storage = &Storage{
 		spannerClient: make(map[string]*spanner.Client),
 	}
@@ -131,11 +130,9 @@ func GetStorageInstance() *Storage {
 			InitializeDriver(context.Background())
 		}
 	})
-	fmt.Println("Storage instance created", storage)
 	return storage
 }
 
 func (s Storage) getSpannerClient(tableName string) *spanner.Client {
-	fmt.Println("test", models.SpannerTableMap)
 	return s.spannerClient[models.GlobalConfig.Spanner.InstanceID]
 }

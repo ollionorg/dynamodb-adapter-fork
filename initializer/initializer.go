@@ -35,6 +35,6 @@ func InitAll() error {
 		return err
 	}
 	services.StartConfigManager()
-	//services.InitStream()
+	services.InitStream()
 	return nil
 }
