@@ -33,6 +33,8 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
+var listRemoveTargetRegex = regexp.MustCompile(`(.*)\[(\d+)\]`)
+
 // getSpannerProjections makes a projection array of columns
 func getSpannerProjections(projectionExpression, table string, expressionAttributeNames map[string]string) []string {
 	if projectionExpression == "" {
@@ -606,8 +608,7 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 // parseListRemoveTarget parses a list attribute target and its index from the action value.
 func parseListRemoveTarget(target string) (string, int) {
 	// Example: listAttribute[2]
-	re := regexp.MustCompile(`(.*)\[(\d+)\]`)
-	matches := re.FindStringSubmatch(target)
+	matches := listRemoveTargetRegex.FindStringSubmatch(target)
 	if len(matches) == 3 {
 		index, _ := strconv.Atoi(matches[2])
 		return matches[1], index

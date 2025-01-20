@@ -36,10 +36,11 @@ import (
 
 var operations = map[string]string{"SET": "(?i) SET ", "DELETE": "(?i) DELETE ", "ADD": "(?i) ADD ", "REMOVE": "(?i) REMOVE "}
 var byteSliceType = reflect.TypeOf([]byte(nil))
-var listAppendRegex = regexp.MustCompile(`list_append\((.*?),\s*(.*?)\)`)
 var (
-	listRegex      = regexp.MustCompile(`list_append\(([^,]+),\s*([^\)]+)\)`)
-	listIndexRegex = regexp.MustCompile(`(\w+)\[(\d+)\]`)
+	listAppendRegex       = regexp.MustCompile(`list_append\((.*?),\s*(.*?)\)`)
+	listRegex             = regexp.MustCompile(`list_append\(([^,]+),\s*([^\)]+)\)`)
+	listIndexRegex        = regexp.MustCompile(`(\w+)\[(\d+)\]`)
+	listUpdateAppendRegex = regexp.MustCompile(`(?i)list_append\(([^)]+),\s*(:\w+)\)`)
 )
 
 func between(value string, a string, b string) string {
@@ -467,8 +468,7 @@ func extractOperations(updateExpression string) map[string]string {
 	}
 
 	// Handle list_append explicitly
-	reListAppend := regexp.MustCompile(`(?i)list_append\(([^)]+),\s*(:\w+)\)`)
-	listAppendIndexes := reListAppend.FindAllStringIndex(updateExpression, -1)
+	listAppendIndexes := listUpdateAppendRegex.FindAllStringIndex(updateExpression, -1)
 	for _, index := range listAppendIndexes {
 		opsSeq[index[0]] = "SET" // assuming list_append falls under a SET operation
 		opsIndex = append(opsIndex, index[0])
