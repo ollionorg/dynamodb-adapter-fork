@@ -19,9 +19,9 @@ on:
 
 
 env:
-#  LOCATION: ${{ secrets.LOCATION }}
+  LOCATION: ${{ secrets.LOCATION }}
   TRIVY_VERSION: "0.46.0"
-#  PROJECT_ID : ${{ secrets.PROJECT_ID }}
+  PROJECT_ID : ${{ secrets.PROJECT_ID }}
 #  ARTIFACT_REGISTRY: ${{ secrets.ARTIFACT_REGISTRY }}
 #  IMAGE: ${{ secrets.IMAGE }}
   APP_VERSION: ${{ github.sha }}
@@ -96,15 +96,15 @@ jobs:
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
 
-#      - id: 'auth'
-#        name: 'Authenticate to Google Cloud'
-#        uses: 'google-github-actions/auth@v2'
-#        with:
-#          project_id: ${{ env.PROJECT_ID }}
-#          workload_identity_provider: ${{ secrets.workload_identity_provider }}
-#          service_account: ${{ secrets.service_account_deploy }}
-#          create_credentials_file: true
-#          export_environment_variables: true
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT_DEPLOY }}
+          create_credentials_file: true
+          export_environment_variables: true
 
 #      - name: 'Set up Cloud SDK'
 #        uses: 'google-github-actions/setup-gcloud@v2.1.0'
@@ -163,6 +163,8 @@ jobs:
       
       - name: Run integration test cases
         id: integration_test
+        env:
+          INTEGRATION_TEST_CRED_PATH: ${{ secrets.INTEGRATION_TEST_CRED_PATH }}
         run: |
             go run "${GITHUB_WORKSPACE}/integrationtest/setup.go" setup
             go test "${GITHUB_WORKSPACE}/integrationtest/api_test.go" | tee -a ${GITHUB_WORKSPACE}/integration_test_result.txt
