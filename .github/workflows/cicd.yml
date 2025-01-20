@@ -163,11 +163,9 @@ jobs:
       
       - name: Run integration test cases
         id: integration_test
-        env:
-          INTEGRATION_TEST_CRED_PATH: ${{ secrets.INTEGRATION_TEST_CRED_PATH }}
         run: |
             go run "${GITHUB_WORKSPACE}/integrationtest/setup.go" setup
-            go test "${GITHUB_WORKSPACE}/integrationtest/api_test.go"
+            go test "${GITHUB_WORKSPACE}/integrationtest/api_test.go" | tee -a ${GITHUB_WORKSPACE}/integration_test_result.txt
             go run "${GITHUB_WORKSPACE}/integrationtest/setup.go" teardown
 
       - name: Comment integration test result on PR
