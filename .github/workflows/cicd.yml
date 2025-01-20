@@ -166,9 +166,9 @@ jobs:
         env:
           INTEGRATION_TEST_CRED_PATH: ${{ secrets.INTEGRATION_TEST_CRED_PATH }}
         run: |
-            go run ${process.env.GITHUB_WORKSPACE}/integrationtest/setup.go setup
-            go test ${process.env.GITHUB_WORKSPACE}/integrationtest/api_test.go
-            go run ${process.env.GITHUB_WORKSPACE}/integrationtest/setup.go teardown
+            go run `${process.env.GITHUB_WORKSPACE}/integrationtest/setup.go` setup
+            go test `${process.env.GITHUB_WORKSPACE}/integrationtest/api_test.go`
+            go run `${process.env.GITHUB_WORKSPACE}/integrationtest/setup.go` teardown
 
       - name: Comment integration test result on PR
         uses: actions/github-script@v7
