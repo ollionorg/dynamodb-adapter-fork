@@ -74,6 +74,21 @@ func InitConfig(box *rice.Box) {
 		if err != nil {
 			logger.LogFatal(err)
 		}
+
+        // Override with ENV variables if available.
+        if envVar := os.Getenv("GoogleProjectID"); envVar != "" {
+            config.GoogleProjectID = envVar
+        }
+
+        if envVar := os.Getenv("SpannerDb"); envVar != "" {
+            config.SpannerDb = envVar
+        }
+
+        if envVar := os.Getenv("dynamodb_adapter_table_ddl"); envVar != "" {
+            config.SpannerDb = envVar
+        }
+    
+
 		err = json.Unmarshal(ba, ConfigurationMap)
 		if err != nil {
 			logger.LogFatal(err)
