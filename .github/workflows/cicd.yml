@@ -143,7 +143,8 @@ jobs:
         env:
           INTEGRATION_TEST_CRED_PATH: ${{ secrets.INTEGRATION_TEST_CRED_PATH }}
           GoogleProjectID: ${{ secrets.PROJECT_ID }}
-          SpannerDb: ${{ secrets.SPANNER_INSTANCE_ID }}
+          SpannerDb: "dynamodb-adapter"
+          dynamodb_adapter_table_ddl: ${{ secrets.SPANNER_INSTANCE_ID }}
         run: |
             go run "${GITHUB_WORKSPACE}/integrationtest/setup.go" setup
             go test "${GITHUB_WORKSPACE}/integrationtest/api_test.go" | tee -a ${GITHUB_WORKSPACE}/integration_test_result.txt

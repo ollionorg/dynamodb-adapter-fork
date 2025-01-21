@@ -68,7 +68,7 @@ func main() {
 	}
 
 	var databaseName = fmt.Sprintf(
-		"projects/%s/instances/%s/databases/%s", conf.GoogleProjectID, conf.SpannerDb, m["dynamodb_adapter_table_ddl"],
+		"projects/%s/instances/%s/databases/%s", conf.GoogleProjectID, m["dynamodb_adapter_table_ddl"], conf.SpannerDb,
 	)
 
 	switch cmd := os.Args[1]; cmd {
