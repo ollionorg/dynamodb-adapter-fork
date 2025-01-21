@@ -85,15 +85,15 @@ var (
 	getItemTestForList = models.GetItemMeta{
 		TableName: "listDynamo",
 		Key: map[string]*dynamodb.AttributeValue{
-			"contact_ranking_list": {S: aws.String("contact_ranking_list")},
+			"rank_list": {S: aws.String("rank_list")},
 		},
 	}
 	getItemTestForListOutput = `{
 		"Item": {
 			"updated_at": {"S": "2024-12-04T11:02:02Z"},
-			"contact_ranking_list": {"S": "contact_ranking_list"},
-			"context": {"S": "context"},
-			"guid": {"S": "123e4567-e89b-12d3-a456-value001"},
+			"rank_list": {"S": "rank_list"},
+			"category": {"S": "category"},
+			"id": {"S": "123e4567-e89b-12d3-a456-value001"},
 			"list_type": {"L": [
 				{"S": "John Doe"},
 				{"N": "62536"},
@@ -272,9 +272,9 @@ var (
 		RequestItems: map[string]models.BatchGetWithProjectionMeta{
 			"test_table": {
 				Keys: []map[string]*dynamodb.AttributeValue{
-					{"contact_ranking_list": {S: aws.String("contact_ranking_list")}},
-					{"contact_ranking_list": {S: aws.String("contact_ranking_list1")}},
-					{"contact_ranking_list": {S: aws.String("contact_ranking_list2")}},
+					{"rank_list": {S: aws.String("rank_list")}},
+					{"rank_list": {S: aws.String("rank_list1")}},
+					{"rank_list": {S: aws.String("rank_list2")}},
 				},
 			},
 		},
@@ -284,9 +284,9 @@ var (
 		"test_table": [
 			{
 				"updated_at": {"S": "2024-12-04T11:02:02Z"},
-				"contact_ranking_list": {"S": "contact_ranking_list"},
-				"context": {"S": "context"},
-				"guid": {"S": "testing"},
+				"rank_list": {"S": "rank_list"},
+				"category": {"S": "category"},
+				"id": {"S": "testing"},
 				"list_type": {"L": [
 					{"S": "John doe"},
 					{"N": "62536"},
@@ -295,9 +295,9 @@ var (
 			},
 			{
 				"updated_at": {"S": "2024-12-04T11:02:02Z"},
-				"contact_ranking_list": {"S": "contact_ranking_list1"},
-				"context": {"S": "context1"},
-				"guid": {"S": "guid"},
+				"rank_list": {"S": "rank_list1"},
+				"category": {"S": "category1"},
+				"id": {"S": "id"},
 				"list_type": {"L": [
 					{"S": "string_value"},
 					{"N": "12345"},
@@ -313,9 +313,9 @@ var (
 				]}
 			},
 			{
-				"contact_ranking_list": {"S": "contact_ranking_list2"},
-				"context": {"S": "context"},
-				"guid": {"S": "guid"},
+				"rank_list": {"S": "rank_list2"},
+				"category": {"S": "category"},
+				"id": {"S": "id"},
 				"list_type": {"L": [
 					{"S": "test"},
 					{"S": "dummy_value"},
@@ -667,7 +667,7 @@ var (
 
 	ScanTestCaseListName = "13: List Type"
 	ScanTestCaseList     = models.ScanMeta{
-		TableName: "test_table",
+		TableName: "listDynamo",
 		Limit:     2,
 		Select:    "COUNT",
 	}
@@ -816,7 +816,7 @@ var (
 	UpdateItemTestForList     = models.UpdateAttr{
 		TableName: "test_table",
 		Key: map[string]*dynamodb.AttributeValue{
-			"contact_ranking_list": {S: aws.String("contact_ranking_list2")},
+			"rank_list": {S: aws.String("rank_list2")},
 		},
 		UpdateExpression: "SET #lt[1] = :newValue",
 		ExpressionAttributeNames: map[string]string{
@@ -833,9 +833,9 @@ var (
 				{"S": "updated_value"},
 				{"N": "62536"}
 			]},
-			"contact_ranking_list": {"S": "contact_ranking_list2"},
-			"context": {"S": "context"},
-			"guid": {"S": "guid"}
+			"rank_list": {"S": "rank_list2"},
+			"category": {"S": "category"},
+			"id": {"S": "id"}
 		}
 	}`
 )
@@ -957,14 +957,14 @@ var (
 			"updated_at": {
 				S: aws.String("2025-01-21T10:00:00Z"),
 			},
-			"contact_ranking_list": {
-				S: aws.String("new_contact_ranking_list"),
+			"rank_list": {
+				S: aws.String("new_rank_list"),
 			},
-			"context": {
-				S: aws.String("new_context"),
+			"category": {
+				S: aws.String("new_category"),
 			},
-			"guid": {
-				S: aws.String("new_guid"),
+			"id": {
+				S: aws.String("new_id"),
 			},
 			"list_type": {
 				L: []*dynamodb.AttributeValue{
@@ -982,9 +982,9 @@ var (
 	PutItemTestForListOutput = `{
 		"Attributes": {
 			"updated_at": {"S": "2025-01-21T10:00:00Z"},
-			"contact_ranking_list": {"S": "new_contact_ranking_list"},
-			"context": {"S": "new_context"},
-			"guid": {"S": "new_guid"},
+			"rank_list": {"S": "new_rank_list"},
+			"category": {"S": "new_category"},
+			"id": {"S": "new_id"},
 			"list_type": {"L": [
 				{"S": "list_value1"},
 				{"N": "100"},
@@ -1086,7 +1086,7 @@ var (
 	DeleteItemTestCaseList     = models.Delete{
 		TableName: "listDynamo",
 		Key: map[string]*dynamodb.AttributeValue{
-			"contact_ranking_list": {S: aws.String("contact_ranking_list")},
+			"rank_list": {S: aws.String("rank_list")},
 		},
 		ConditionExpression: "attribute_exists(#listKey)",
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
@@ -1095,9 +1095,9 @@ var (
 	}
 	DeleteItemTestCaseListOutput = `{
 		"Attributes": {
-			"contact_ranking_list": {"S": "contact_ranking_list"},
-			"context": {"S": "test_context"},
-			"guid": {"S": "guid"},
+			"rank_list": {"S": "rank_list"},
+			"category": {"S": "test_category"},
+			"id": {"S": "id"},
 			"list_type": {"L": [
 				{"S": "value1"},
 				{"N": "123"},
@@ -1495,8 +1495,8 @@ var (
 				{
 					PutReq: models.BatchPutItem{
 						Item: map[string]*dynamodb.AttributeValue{
-							"guid":    {S: aws.String("test_guid1")},
-							"context": {S: aws.String("test_context1")},
+							"id":        {S: aws.String("test_id1")},
+							"rank_list": {S: aws.String("rank_list")},
 							"list_type": {
 								L: []*dynamodb.AttributeValue{
 									{S: aws.String("value1")},
@@ -1510,8 +1510,7 @@ var (
 				{
 					DelReq: models.BatchDeleteItem{
 						Key: map[string]*dynamodb.AttributeValue{
-							"guid":    {S: aws.String("test_guid2")},
-							"context": {S: aws.String("test_context2")},
+							"rank_list": {S: aws.String("rank_list1")},
 						},
 					},
 				},
@@ -1963,7 +1962,7 @@ func testBatchWriteItemAPI(t *testing.T) {
 		createStatusCheckPostTestCase(BatchWriteItemTestCase8Name, "/v1", "BatchWriteItem", http.StatusOK, BatchWriteItemTestCase8),
 		createStatusCheckPostTestCase(BatchWriteItemTestCase9Name, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCase9),
 		createStatusCheckPostTestCase(BatchWriteItemTestCase10Name, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCase10),
-		createStatusCheckPostTestCase(BatchWriteItemTestCaseListName, "/v1", "BatchWriteItem", http.StatusOK, BatchWriteItemTestCaseList),
+		createStatusCheckPostTestCase(BatchWriteItemTestCaseListName, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCaseList),
 	}
 	apitest.RunTests(t, tests)
 }

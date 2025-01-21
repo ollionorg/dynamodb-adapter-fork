@@ -148,11 +148,11 @@ func createDatabase(w io.Writer, db string) error {
 			) PRIMARY KEY (d_id)`,
 			`CREATE TABLE test_table (
 				updated_at STRING(MAX),
-				contact_ranking_list STRING(MAX),
-				context STRING(MAX),
-				guid STRING(MAX),
+				rank_list STRING(MAX),
+				category STRING(MAX),
+				id STRING(MAX),
 				list_type JSON,
-			  ) PRIMARY KEY(contact_ranking_list)`,
+			  ) PRIMARY KEY(rank_list)`,
 		},
 	})
 	if err != nil {

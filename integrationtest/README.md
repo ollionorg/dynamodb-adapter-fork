@@ -58,10 +58,10 @@ Running the integration tests will require the files present in the
         "spannerIndexName": "contact_ranking_list",
         "actualTable": "listDynamo",
         "attributeTypes": {
-            "guid": "S",
-            "context": "S",
-            "contact_ranking_list": "S",
-            "name": "S",
+            "id": "S",
+            "category": "S",
+            "rank_list": "S",
+            "updated_at": "S",
             "list_type": "L"
         },
         "indices": {}
