@@ -17,7 +17,6 @@ on:
   release:
     types: [ published ]
 
-
 env:
   LOCATION: ${{ secrets.LOCATION }}
   TRIVY_VERSION: "0.46.0"
@@ -137,7 +136,7 @@ jobs:
               console.error('Error commenting on the pull request:', error);
               // process.exit(1);
             });
-      
+
       - name: Run integration test cases
         id: integration_test
         env:
