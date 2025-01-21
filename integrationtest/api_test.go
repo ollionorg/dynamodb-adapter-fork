@@ -82,6 +82,25 @@ var (
 		ProjectionExpression: "#emp, address",
 	}
 	getItemTest5Output = `{"Item":{"address":{"S":"Ney York"}}}`
+	getItemTestForList = models.GetItemMeta{
+		TableName: "listDynamo",
+		Key: map[string]*dynamodb.AttributeValue{
+			"contact_ranking_list": {S: aws.String("contact_ranking_list")},
+		},
+	}
+	getItemTestForListOutput = `{
+		"Item": {
+			"updated_at": {"S": "2024-12-04T11:02:02Z"},
+			"contact_ranking_list": {"S": "contact_ranking_list"},
+			"context": {"S": "context"},
+			"guid": {"S": "123e4567-e89b-12d3-a456-value001"},
+			"list_type": {"L": [
+				{"S": "John Doe"},
+				{"N": "62536"},
+				{"BOOL": true}
+			]}
+		}
+	}`
 )
 
 // params for TestGetBatchAPI
@@ -248,6 +267,64 @@ var (
 			},
 		},
 	}
+	TestGetBatchForListName = "Test: BatchGet for Multiple Keys in List Dyanmo table"
+	TestGetBatchForList     = models.BatchGetMeta{
+		RequestItems: map[string]models.BatchGetWithProjectionMeta{
+			"test_table": {
+				Keys: []map[string]*dynamodb.AttributeValue{
+					{"contact_ranking_list": {S: aws.String("contact_ranking_list")}},
+					{"contact_ranking_list": {S: aws.String("contact_ranking_list1")}},
+					{"contact_ranking_list": {S: aws.String("contact_ranking_list2")}},
+				},
+			},
+		},
+	}
+	TestGetBatchForListOutput = `{
+	"Responses": {
+		"test_table": [
+			{
+				"updated_at": {"S": "2024-12-04T11:02:02Z"},
+				"contact_ranking_list": {"S": "contact_ranking_list"},
+				"context": {"S": "context"},
+				"guid": {"S": "testing"},
+				"list_type": {"L": [
+					{"S": "John doe"},
+					{"N": "62536"},
+					{"B": true}
+				]}
+			},
+			{
+				"updated_at": {"S": "2024-12-04T11:02:02Z"},
+				"contact_ranking_list": {"S": "contact_ranking_list1"},
+				"context": {"S": "context1"},
+				"guid": {"S": "guid"},
+				"list_type": {"L": [
+					{"S": "string_value"},
+					{"N": "12345"},
+					{"BOOL": true},
+					{"NULL": true},
+					{"M": {"key": {"N": "1245"}}},
+					{"L": [
+						{"N": "1"},
+						{"N": "2"},
+						{"N": "3"}
+					]},
+					{"S": "testing"},
+				]}
+			},
+			{
+				"contact_ranking_list": {"S": "contact_ranking_list2"},
+				"context": {"S": "context"},
+				"guid": {"S": "guid"},
+				"list_type": {"L": [
+					{"S": "test"},
+					{"S": "dummy_value"},
+					{"N": "62536"}
+				]}
+			}
+		]
+	}
+}`
 )
 
 // test Data for Query API
@@ -471,7 +548,7 @@ var (
 	queryTestCaseOutput16 = `{"Count":1,"Items":[]}`
 )
 
-//Test Data for Scan API
+// Test Data for Scan API
 var (
 	ScanTestCase1Name = "1: Wrong URL"
 	ScanTestCase1     = models.ScanMeta{
@@ -587,9 +664,17 @@ var (
 		Select:    "COUNT",
 	}
 	ScanTestCase13Output = `{"Count":5,"Items":[]}`
+
+	ScanTestCaseListName = "13: List Type"
+	ScanTestCaseList     = models.ScanMeta{
+		TableName: "test_table",
+		Limit:     2,
+		Select:    "COUNT",
+	}
+	ScanTestCaseListOutput = `{"Count":2,"Items":[], "LastEvaluatedKey": null}`
 )
 
-//Test Data for UpdateItem API
+// Test Data for UpdateItem API
 var (
 
 	//200 Status check
@@ -726,9 +811,36 @@ var (
 			":val2": {N: aws.String("9")},
 		},
 	}
+
+	UpdateItemTestForListName = "Test: UpdateItem for List Data"
+	UpdateItemTestForList     = models.UpdateAttr{
+		TableName: "test_table",
+		Key: map[string]*dynamodb.AttributeValue{
+			"contact_ranking_list": {S: aws.String("contact_ranking_list2")},
+		},
+		UpdateExpression: "SET #lt[1] = :newValue",
+		ExpressionAttributeNames: map[string]string{
+			"#lt": "list_type",
+		},
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":newValue": {S: aws.String("updated_value")},
+		},
+	}
+	UpdateItemTestForListOutput = `{
+		"Attributes": {
+			"list_type": {"L": [
+				{"S": "test"},
+				{"S": "updated_value"},
+				{"N": "62536"}
+			]},
+			"contact_ranking_list": {"S": "contact_ranking_list2"},
+			"context": {"S": "context"},
+			"guid": {"S": "guid"}
+		}
+	}`
 )
 
-//Test Data for PutItem API
+// Test Data for PutItem API
 var (
 	//400 bad request
 	PutItemTestCase1Name = "1: only tablename passed"
@@ -837,9 +949,54 @@ var (
 			"age":    {N: aws.String("10")},
 		},
 	}
+
+	PutItemTestForListName = "Test: PutItem with List Data"
+	PutItemTestForList     = models.Meta{
+		TableName: "listDynamo",
+		Item: map[string]*dynamodb.AttributeValue{
+			"updated_at": {
+				S: aws.String("2025-01-21T10:00:00Z"),
+			},
+			"contact_ranking_list": {
+				S: aws.String("new_contact_ranking_list"),
+			},
+			"context": {
+				S: aws.String("new_context"),
+			},
+			"guid": {
+				S: aws.String("new_guid"),
+			},
+			"list_type": {
+				L: []*dynamodb.AttributeValue{
+					{S: aws.String("list_value1")},
+					{N: aws.String("100")},
+					{BOOL: aws.Bool(false)},
+					{NULL: aws.Bool(true)},
+					{M: map[string]*dynamodb.AttributeValue{
+						"key1": {S: aws.String("value1")},
+					}},
+				},
+			},
+		},
+	}
+	PutItemTestForListOutput = `{
+		"Attributes": {
+			"updated_at": {"S": "2025-01-21T10:00:00Z"},
+			"contact_ranking_list": {"S": "new_contact_ranking_list"},
+			"context": {"S": "new_context"},
+			"guid": {"S": "new_guid"},
+			"list_type": {"L": [
+				{"S": "list_value1"},
+				{"N": "100"},
+				{"BOOL": false},
+				{"NULL": true},
+				{"M": {"key1": {"S": "value1"}}}
+			]}
+		}
+	}`
 )
 
-//Test Data DeleteItem API
+// Test Data DeleteItem API
 var (
 	DeleteItemTestCase1Name = "1: Only TableName passed"
 	DeleteItemTestCase1     = models.Delete{
@@ -924,9 +1081,35 @@ var (
 		},
 		ConditionExpression: "#ag > :val2",
 	}
+
+	DeleteItemTestCaseListName = "ConditionExpression with ExpressionAttributeValues for List"
+	DeleteItemTestCaseList     = models.Delete{
+		TableName: "listDynamo",
+		Key: map[string]*dynamodb.AttributeValue{
+			"contact_ranking_list": {S: aws.String("contact_ranking_list")},
+		},
+		ConditionExpression: "attribute_exists(#listKey)",
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":listKey": {S: aws.String("list_type")},
+		},
+	}
+	DeleteItemTestCaseListOutput = `{
+		"Attributes": {
+			"contact_ranking_list": {"S": "contact_ranking_list"},
+			"context": {"S": "test_context"},
+			"guid": {"S": "guid"},
+			"list_type": {"L": [
+				{"S": "value1"},
+				{"N": "123"},
+				{"BOOL": true},
+				{"NULL": true},
+				{"M": {"key1": {"S": "value1"}}}
+			]}
+		}
+	}`
 )
 
-//test Data for BatchWriteItem API
+// test Data for BatchWriteItem API
 var (
 	BatchWriteItemTestCase1Name = "1: Only Table name passed"
 	BatchWriteItemTestCase1     = models.BatchWriteItem{
@@ -1304,6 +1487,46 @@ var (
 			},
 		},
 	}
+
+	BatchWriteItemTestCaseListName = "1: Insert and Delete Items in Batch"
+	BatchWriteItemTestCaseList     = models.BatchWriteItem{
+		RequestItems: map[string][]models.BatchWriteSubItems{
+			"listDynamo": {
+				{
+					PutReq: models.BatchPutItem{
+						Item: map[string]*dynamodb.AttributeValue{
+							"guid":    {S: aws.String("test_guid1")},
+							"context": {S: aws.String("test_context1")},
+							"list_type": {
+								L: []*dynamodb.AttributeValue{
+									{S: aws.String("value1")},
+									{N: aws.String("123")},
+									{BOOL: aws.Bool(true)},
+								},
+							},
+						},
+					},
+				},
+				{
+					DelReq: models.BatchDeleteItem{
+						Key: map[string]*dynamodb.AttributeValue{
+							"guid":    {S: aws.String("test_guid2")},
+							"context": {S: aws.String("test_context2")},
+						},
+					},
+				},
+			},
+		},
+	}
+	BatchWriteItemTestCase1Output = `{
+		"UnprocessedItems": {},
+		"ConsumedCapacity": [
+			{
+				"TableName": "test_table",
+				"CapacityUnits": 2
+			}
+		]
+	}`
 )
 
 func handlerInitFunc() *gin.Engine {
@@ -1451,6 +1674,7 @@ func testGetItemAPI(t *testing.T) {
 		createPostTestCase("Crorect data with Projection param Testcase", "/v1", "GetItem", getItemTest3Output, getItemTest3),
 		createPostTestCase("Crorect data with  ExpressionAttributeNames Testcase", "/v1", "GetItem", getItemTest3Output, getItemTest4),
 		createPostTestCase("Crorect data with  ExpressionAttributeNames values not passed Testcase", "/v1", "GetItem", getItemTest5Output, getItemTest5),
+		createPostTestCase("Crorect data for List Data Type", "/v1", "GetItem", getItemTestForListOutput, getItemTestForList),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1500,6 +1724,7 @@ func testGetBatchAPI(t *testing.T) {
 		createPostTestCase(TestGetBatch7Name, "/v1", "BatchGetItem", TestGetBatch7Output, TestGetBatch7),
 		createPostTestCase(TestGetBatch8Name, "/v1", "BatchGetItem", TestGetBatch8Output, TestGetBatch8),
 		createPostTestCase(TestGetBatch9Name, "/v1", "BatchGetItem", TestGetBatch9Output, TestGetBatch9),
+		createPostTestCase(TestGetBatchForListName, "/v1", "BatchGetItem", TestGetBatchForListOutput, TestGetBatchForList),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1651,6 +1876,7 @@ func testScanAPI(t *testing.T) {
 		createPostTestCase(ScanTestCase11Name, "/v1", "Query", ScanTestCase11Output, ScanTestCase11),
 		createPostTestCase(ScanTestCase12Name, "/v1", "Query", ScanTestCase12Output, ScanTestCase12),
 		createPostTestCase(ScanTestCase13Name, "/v1", "Query", ScanTestCase13Output, ScanTestCase13),
+		createPostTestCase(ScanTestCaseListName, "/v1", "Query", ScanTestCaseListOutput, ScanTestCaseList),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1672,6 +1898,7 @@ func testUpdateItemAPI(t *testing.T) {
 		createPostTestCase(UpdateItemTestCase2Name, "/v1", "UpdateItem", UpdateItemTestCase2Output, UpdateItemTestCase2),
 		createPostTestCase(UpdateItemTestCase3Name, "/v1", "UpdateItem", UpdateItemTestCase3Output, UpdateItemTestCase3),
 		createPostTestCase(UpdateItemTestCase7Name, "/v1", "UpdateItem", UpdateItemTestCase7Output, UpdateItemTestCase7),
+		createPostTestCase(UpdateItemTestForListName, "/v1", "UpdateItem", UpdateItemTestForListOutput, UpdateItemTestForList),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1693,6 +1920,7 @@ func testPutItemAPI(t *testing.T) {
 		createPostTestCase(PutItemTestCase3Name, "/v1", "PutItem", PutItemTestCase3Output, PutItemTestCase3),
 		createPostTestCase(PutItemTestCase4Name, "/v1", "PutItem", PutItemTestCase4Output, PutItemTestCase4),
 		createStatusCheckPostTestCase(PutItemTestCase9Name, "/v1", "PutItem", http.StatusOK, PutItemTestCase9),
+		createPostTestCase(PutItemTestForListName, "/v1", "PutItem", PutItemTestForListOutput, PutItemTestForList),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1713,6 +1941,7 @@ func testDeleteItemAPI(t *testing.T) {
 		createStatusCheckPostTestCase(DeleteItemTestCase3Name, "/v1", "DeleteItem", http.StatusOK, DeleteItemTestCase3),
 		createPostTestCase(DeleteItemTestCase4Name, "/v1", "DeleteItem", DeleteItemTestCase4Output, DeleteItemTestCase4),
 		createPostTestCase(DeleteItemTestCase5Name, "/v1", "DeleteItem", DeleteItemTestCase5Output, DeleteItemTestCase5),
+		createPostTestCase(DeleteItemTestCaseListName, "/v1", "DeleteItem", DeleteItemTestCaseListOutput, DeleteItemTestCaseList),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1734,6 +1963,7 @@ func testBatchWriteItemAPI(t *testing.T) {
 		createStatusCheckPostTestCase(BatchWriteItemTestCase8Name, "/v1", "BatchWriteItem", http.StatusOK, BatchWriteItemTestCase8),
 		createStatusCheckPostTestCase(BatchWriteItemTestCase9Name, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCase9),
 		createStatusCheckPostTestCase(BatchWriteItemTestCase10Name, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCase10),
+		createStatusCheckPostTestCase(BatchWriteItemTestCaseListName, "/v1", "BatchWriteItem", http.StatusOK, BatchWriteItemTestCaseList),
 	}
 	apitest.RunTests(t, tests)
 }

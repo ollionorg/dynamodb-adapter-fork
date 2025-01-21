@@ -51,6 +51,20 @@ Running the integration tests will require the files present in the
             "d_specialization": "S"
         },
         "indices": {}
+    },
+    "listDynamo":{
+        "partitionKey": "contact_ranking_list",
+        "sortKey": "",
+        "spannerIndexName": "contact_ranking_list",
+        "actualTable": "listDynamo",
+        "attributeTypes": {
+            "guid": "S",
+            "context": "S",
+            "contact_ranking_list": "S",
+            "name": "S",
+            "list_type": "L"
+        },
+        "indices": {}
     }
 }
 ```

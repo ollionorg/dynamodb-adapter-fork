@@ -146,6 +146,13 @@ func createDatabase(w io.Writer, db string) error {
 				d_name 		 STRING(MAX),
 				d_specialization STRING(MAX),
 			) PRIMARY KEY (d_id)`,
+			`CREATE TABLE test_table (
+				updated_at STRING(MAX),
+				contact_ranking_list STRING(MAX),
+				context STRING(MAX),
+				guid STRING(MAX),
+				list_type JSON,
+			  ) PRIMARY KEY(contact_ranking_list)`,
 		},
 	})
 	if err != nil {
@@ -312,7 +319,7 @@ func initData(w io.Writer, db string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		stmt := spanner.Statement{
 			SQL: `INSERT department (d_id, d_name, d_specialization) VALUES
