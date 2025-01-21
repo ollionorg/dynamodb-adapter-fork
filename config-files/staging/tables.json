@@ -1,8 +1,8 @@
 {
   "test_table_for_demo": {
-    "partitionKey" :  "guid",
-    "sortKey":         "context",
+    "partitionKey" : "guid",
+    "sortKey": "context",
     "spannerIndexName": "guid",
-    "actualTable":      "test_table_for_demo"
+    "actualTable": "test_table_for_demo"
   }
 }
