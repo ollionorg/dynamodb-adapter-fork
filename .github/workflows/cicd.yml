@@ -22,8 +22,6 @@ env:
   LOCATION: ${{ secrets.LOCATION }}
   TRIVY_VERSION: "0.46.0"
   PROJECT_ID : ${{ secrets.PROJECT_ID }}
-#  ARTIFACT_REGISTRY: ${{ secrets.ARTIFACT_REGISTRY }}
-#  IMAGE: ${{ secrets.IMAGE }}
   APP_VERSION: ${{ github.sha }}
 
 jobs:
@@ -106,28 +104,6 @@ jobs:
           create_credentials_file: true
           export_environment_variables: true
 
-
-#      - name: 'Set up Cloud SDK'
-#        uses: 'google-github-actions/setup-gcloud@v2.1.0'
-#        with:
-#          version: '>= 416.0.0'
-#          install_components: 'kubectl'
-#
-#      - name: Get config file from GCS
-#        run: |
-#          gcloud storage cp gs://gcs-fuse-csi-proxy-ad/config-without-otel.yaml config.yaml
-##
-#      - name: Build
-#        run: |-
-#            gcloud auth configure-docker ${{ env.LOCATION }}-docker.pkg.dev
-#            docker pull "${{ env.LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY}}/${{ env.IMAGE }}:latest"
-#            docker build \
-#              --platform linux/amd64 --tag "${{ env.LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY}}/${{ env.IMAGE }}:${{ env.APP_VERSION }}" .
-#
-#            # Create duplicate image tag for unit test
-#            docker tag "${{ env.LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY}}/${{ env.IMAGE }}:${{ env.APP_VERSION }}" \
-#              "${{ env.LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY}}/${{ env.IMAGE }}:unit-test"
-
       - name: Run unit test cases
         id: unit_test
         run: |
@@ -166,6 +142,7 @@ jobs:
         id: integration_test
         env:
           INTEGRATION_TEST_CRED_PATH: ${{ secrets.INTEGRATION_TEST_CRED_PATH }}
+          PROJECT_ID: projects/${{ secrets.PROJECT_ID }}/instances/${{ secrets.SPANNER_INSTANCE_ID }}
         run: |
             go run "${GITHUB_WORKSPACE}/integrationtest/setup.go" setup
             go test "${GITHUB_WORKSPACE}/integrationtest/api_test.go" | tee -a ${GITHUB_WORKSPACE}/integration_test_result.txt
@@ -218,6 +195,14 @@ jobs:
               // process.exit(1);
             });
 
+  sonarScan:
+    name: Sonar Cloud Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'write'
+      id-token: 'write'
+      pull-requests: write
+    steps:
       - name: Analyze with SonarCloud
         uses: sonarsource/sonarcloud-github-action@master
         env:
@@ -229,70 +214,4 @@ jobs:
              -Dsonar.projectKey=cloud-spanner-adaptor
              -Dproject.settings=sonar-project.properties
              -Dsonar.go.coverage.reportPaths=cover.out
-
-      - name: Install Trivy
-        run: |
-          wget -q "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-          tar zxf "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-
-          sudo mv trivy /usr/local/bin/
-          echo "Trivy ${TRIVY_VERSION} has been installed to /usr/local/bin/trivy"
-
-#      - name: Trivy scan
-#        id: trivy_scan
-#        run: |
-#          echo "Scanning the image for vulnerabilities"
-#
-#          trivy image --severity HIGH,CRITICAL,MEDIUM --ignore-unfixed -f json -o results.json "${{ env.LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY}}/${{ env.IMAGE }}:${{ env.APP_VERSION }}"
-#
-#          echo "------------------"
-#
-#          cat results.json | jq -r '.Results[] | select(.Vulnerabilities != null) | .Vulnerabilities[]' > scan_results
-#          if jq -e '. == {}' < scan_results >/dev/null
-#          then
-#            echo "No vulnerabilities found"
-#          else
-#            echo "vulnerabilities found"
-#            echo "vulnerability_flag=true" >> "$GITHUB_OUTPUT"
-#            echo "| Vulnerability ID | Title | Package | Installed Version | Fixed Version | Status   | Severity | Published Date                                                                                                                    |" >> ../results_table.md
-#            echo "|------------------|--------|--------------|-------------------|---------------|--------------|----------|----------------------------------------------------------------------------------------------------------------------------------|" >> ../results_table.md
-#
-#            jq -r '.Results[] | select(.Vulnerabilities != null) | .Vulnerabilities[] | "| \(.VulnerabilityID) | \(.Title) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion) | \(.Status) | \(.Severity) | \(.PublishedDate) |"' results.json >> ../results_table.md
-#
-#            cat ../results_table.md
-#            echo "Vulnerabilities found, please fix these to proceed :rotating_light:" >> $GITHUB_STEP_SUMMARY
-#            cat ../results_table.md >> $GITHUB_STEP_SUMMARY
-#          fi
-#
-#      - name: Trivy Error Comment on PR
-#        uses: actions/github-script@v7
-#        if: github.event_name == 'pull_request' && steps.trivy_scan.outputs.vulnerability_flag
-#        with:
-#          script: |
-#            const fs = require('fs');
-#            const table = fs.readFileSync('../results_table.md', 'utf8');
-#            const commentMessage = 'Please fix the above vulnerabilities and re-run the job.';
-#
-#            // Comment on the pull request using the github context
-#            github.rest.issues.createComment({
-#            issue_number: context.payload.pull_request.number,
-#            owner: context.repo.owner,
-#            repo: context.repo.repo,
-#            body: `### Vulnerabilities Detected\n\n${table}\n\n${commentMessage}`,
-#            })
-#              .then(() => {
-#              console.log('Commented on the pull request successfully. Please review and resolve the vulnerabilities');
-#              // process.exit(1); // Exit the script with a failure status to fail the GitHub workflow
-#            })
-#              .catch((error) => {
-#              console.error('Error commenting on the pull request:', error);
-#              // process.exit(1);
-#            });
-
-#      - name: Exit if trivy scan failed
-#        if: steps.trivy_scan.outputs.vulnerability_flag
-#        run: |
-#          docker image rm "${{ env.LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY}}/${{ env.IMAGE }}:${{ env.APP_VERSION }}"
-#          docker image rm "${{ env.LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY}}/${{ env.IMAGE }}:unit-test"
-#          exit 1 #TODO Update exit code
 
