@@ -107,9 +107,8 @@ jobs:
         id: unit_test
         run: |
             go mod tidy
-            go test -v -short ./{/api/v1,/initializer,/config,/storage,/utils,/service/services,/service/spanner} -coverprofile=cover.out | tee -a ${GITHUB_WORKSPACE}/unit_test_result.txt ; (exit ${PIPESTATUS[0]})
-            go tool cover -func cover.out | grep total: >> ${GITHUB_WORKSPACE}/unit_test_result.txt
-
+            go test -v -short ./{/api/v1,/initializer,/config,/storage,/utils,/service/services,/service/spanner} -coverprofile=cover.out
+            [ ${PIPESTATUS[0]} -eq 0 ] && go tool cover -func cover.out | grep total: >> ${GITHUB_WORKSPACE}/unit_test_result.txt || (echo "Unit tests failed." && exit 1)
 
       - name: Comment unit test result on PR
         uses: actions/github-script@v7
