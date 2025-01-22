@@ -238,7 +238,7 @@ jobs:
         with:
            args: >
              -Dsonar.organization=cldcvr
-             -Dsonar.projectKey=cloud-spanner-adaptor
+             -Dsonar.projectKey=ollionorg_dynamodb-adapter-fork
              -Dproject.settings=sonar-project.properties
              -Dsonar.go.coverage.reportPaths=cover.out
 
