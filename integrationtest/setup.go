@@ -74,9 +74,9 @@ func main() {
 	switch cmd := os.Args[1]; cmd {
 	case "setup":
 		w := log.Writer()
-		if err := createDatabase(w, databaseName); err != nil {
-			log.Fatal(err)
-		}
+// 		if err := createDatabase(w, databaseName); err != nil {
+// 			log.Fatal(err)
+// 		}
 
 		if err := updateDynamodbAdapterTableDDL(w, databaseName); err != nil {
 			log.Fatal(err)

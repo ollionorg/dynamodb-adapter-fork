@@ -77,7 +77,7 @@ jobs:
             });
 
   compileTest:
-    name: Unit Test, Integration Test & Sonar Cloud Scan
+    name: Unit Test & Integration Test
     runs-on: ubuntu-latest
     permissions:
       contents: 'write'
