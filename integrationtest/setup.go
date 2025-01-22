@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	expectedRowCount = 18
+	expectedRowCount = 0
 )
 
 var (
@@ -74,13 +74,13 @@ func main() {
 	switch cmd := os.Args[1]; cmd {
 	case "setup":
 		w := log.Writer()
-// 		if err := createDatabase(w, databaseName); err != nil {
-// 			log.Fatal(err)
-// 		}
-
-		if err := updateDynamodbAdapterTableDDL(w, databaseName); err != nil {
+		if err := createDatabase(w, databaseName); err != nil {
 			log.Fatal(err)
 		}
+
+		// if err := updateDynamodbAdapterTableDDL(w, databaseName); err != nil {
+		// 	log.Fatal(err)
+		// }
 
 		count, err := verifySpannerSetup(databaseName)
 		if err != nil {
@@ -126,14 +126,6 @@ func createDatabase(w io.Writer, db string) error {
 				dataType       STRING(MAX),
 				originalColumn STRING(MAX),
 			) PRIMARY KEY (tableName, column)`,
-			`CREATE TABLE dynamodb_adapter_config_manager (
-				tableName     STRING(MAX),
-				config 	      STRING(MAX),
-				cronTime      STRING(MAX),
-				enabledStream STRING(MAX),
-				pubsubTopic   STRING(MAX),
-				uniqueValue   STRING(MAX),
-			) PRIMARY KEY (tableName)`,
 			`CREATE TABLE employee (
 				emp_id 	   FLOAT64,
 				address    STRING(MAX),
@@ -295,6 +287,43 @@ func initData(w io.Writer, db string) error {
 
 	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		stmt := spanner.Statement{
+			SQL: `INSERT INTO dynamodb_adapter_table_ddl (column, tableName, dataType, originalColumn) VALUES
+('d_id', 'department', 'FLOAT64', 'd_id'),
+('d_name', 'department', 'STRING(MAX)', 'd_name'),
+('d_specialization', 'department', 'STRING(MAX)', 'd_specialization')`,
+		}
+		rowCount, err := txn.Update(ctx, stmt)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "%d record(s) inserted.\n", rowCount)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		stmt := spanner.Statement{
+			SQL: `INSERT INTO dynamodb_adapter_table_ddl (column, tableName, dataType, originalColumn) VALUES
+('emp_id', 'employee', 'FLOAT64', 'emp_id'),
+('address', 'employee', 'STRING(MAX)', 'address'),
+('age', 'employee', 'FLOAT64', 'age'),
+('first_name', 'employee', 'STRING(MAX)', 'first_name'),
+('last_name', 'employee', 'STRING(MAX)', 'last_name')`,
+		}
+		rowCount, err := txn.Update(ctx, stmt)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "%d record(s) inserted.\n", rowCount)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		stmt := spanner.Statement{
 			SQL: `INSERT employee (emp_id, address, age, first_name, last_name) VALUES
 						(1, 'Shamli', 10, 'Marc', 'Richards'),
 						(2, 'Ney York', 20, 'Catalina', 'Smith'),
@@ -312,7 +341,7 @@ func initData(w io.Writer, db string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		stmt := spanner.Statement{
 			SQL: `INSERT department (d_id, d_name, d_specialization) VALUES

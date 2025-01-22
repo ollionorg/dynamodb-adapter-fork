@@ -17,6 +17,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -26,7 +27,6 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
-	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
 // Storage object for intracting with storage package
@@ -81,10 +81,10 @@ func GetStorageInstance() *Storage {
 			InitializeDriver()
 		}
 	})
-
+	fmt.Println("storage", storage)
 	return storage
 }
 
 func (s Storage) getSpannerClient(tableName string) *spanner.Client {
-	return s.spannerClient[models.SpannerTableMap[utils.ChangeTableNameForSpanner(tableName)]]
+	return s.spannerClient["spanner-instance-dev"]
 }
