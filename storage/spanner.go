@@ -779,7 +779,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			if !s.IsNull() {
 				singleRow[k] = s.StringVal
 			}
-		case "BYTES(MAX)":
+		case "B":
 			var s []byte
 			err := r.Column(i, &s)
 			if err != nil {
@@ -834,18 +834,6 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				singleRow[k] = m
 			}
 		case "N":
-			var s spanner.NullInt64
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.Int64
-			}
-		case "FLOAT64":
 			var s spanner.NullFloat64
 			err := r.Column(i, &s)
 			if err != nil {

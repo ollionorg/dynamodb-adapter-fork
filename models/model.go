@@ -224,10 +224,10 @@ var OriginalColResponse map[string]string
 
 func init() {
 	TableDDL = make(map[string]map[string]string)
-	TableDDL["dynamodb_adapter_table_ddl"] = map[string]string{"tableName": "S", "column": "S", "dataType": "S", "originalColumn": "S", "partitionKey": "S", "sortKey": "S", "spannerIndexName": "S", "actualTable": "S"}
+	TableDDL["dynamodb_adapter_table_ddl"] = map[string]string{"tableName": "S", "column": "S", "dynamoDataType": "S", "originalColumn": "S", "partitionKey": "S", "sortKey": "S", "spannerIndexName": "S", "actualTable": "S", "spannerDataType": "S"}
 	TableDDL["dynamodb_adapter_config_manager"] = map[string]string{"tableName": "STRING(MAX)", "config": "STRING(MAX)", "cronTime": "STRING(MAX)", "uniqueValue": "STRING(MAX)", "enabledStream": "STRING(MAX)", "pubsubTopic": "STRING(MAX)"}
 	TableColumnMap = make(map[string][]string)
-	TableColumnMap["dynamodb_adapter_table_ddl"] = []string{"tableName", "column", "dataType", "originalColumn", "partitionKey", "sortKey", "spannerIndexName", "actualTable"}
+	TableColumnMap["dynamodb_adapter_table_ddl"] = []string{"tableName", "column", "dynamoDataType", "originalColumn", "partitionKey", "sortKey", "spannerIndexName", "actualTable", "spannerDataType"}
 	TableColumnMap["dynamodb_adapter_config_manager"] = []string{"tableName", "config", "cronTime", "uniqueValue", "enabledStream", "pubsubTopic"}
 	TableColChangeMap = make(map[string]struct{})
 	ColumnToOriginalCol = make(map[string]string)

@@ -38,7 +38,7 @@ func ParseDDL(updateDB bool) error {
 	stmt := spanner.Statement{}
 
 	stmt.SQL = "SELECT * FROM dynamodb_adapter_table_ddl"
-	ms, err := storage.GetStorageInstance().ExecuteSpannerQuery(context.Background(), "dynamodb_adapter_table_ddl", []string{"tableName", "column", "dataType", "originalColumn", "partitionKey", "sortKey", "spannerIndexName", "actualTable"}, false, stmt)
+	ms, err := storage.GetStorageInstance().ExecuteSpannerQuery(context.Background(), "dynamodb_adapter_table_ddl", []string{"tableName", "column", "dynamoDataType", "originalColumn", "partitionKey", "sortKey", "spannerIndexName", "actualTable", "spannerDataType"}, false, stmt)
 
 	if err != nil {
 		return err
@@ -52,7 +52,7 @@ func ParseDDL(updateDB bool) error {
 			tableName := ms[i]["tableName"].(string)
 			column := ms[i]["column"].(string)
 			column = strings.Trim(column, "`")
-			dataType := ms[i]["dataType"].(string)
+			dataType := ms[i]["dynamoDataType"].(string)
 			originalColumn, ok := ms[i]["originalColumn"].(string)
 			partitionKey := ms[i]["partitionKey"].(string)
 			sortKey, _ := ms[i]["sortKey"].(string) // Optional, check if available
