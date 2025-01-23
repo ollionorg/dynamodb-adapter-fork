@@ -22,6 +22,10 @@ env:
   TRIVY_VERSION: "0.46.0"
   PROJECT_ID : ${{ secrets.PROJECT_ID }}
   APP_VERSION: ${{ github.sha }}
+  INSTANCE_ID: ${{ secrets.INSTANCE_ID }}
+  DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+  QUERY_LIMIT: ${{ secrets.QUERY_LIMIT }}
+  DYNAMODB_QUERY_LIMIT: ${{ secrets.DYNAMODB_QUERY_LIMIT }}
 
 jobs:
   golangLint:
@@ -106,6 +110,7 @@ jobs:
       - name: Run unit test cases
         id: unit_test
         run: |
+            envsubst < config.yaml > config.yaml.tmp && mv config.yaml.tmp config.yaml
             go mod tidy
             go test -v -short ./{/api/v1,/initializer,/storage,/utils,/service/services,/service/spanner} -coverprofile=cover.out | tee -a ${GITHUB_WORKSPACE}/unit_test_result.txt ; (exit ${PIPESTATUS[0]})
             go tool cover -func cover.out | grep total: >> ${GITHUB_WORKSPACE}/unit_test_result.txt
@@ -223,6 +228,7 @@ jobs:
       - name: Run unit test cases
         id: unit_test
         run: |
+          envsubst < config.yaml > config.yaml.tmp && mv config.yaml.tmp config.yaml
           go mod tidy
           go test -v -short ./{/api/v1,/initializer,/config,/storage,/utils,/service/services,/service/spanner} -coverprofile=cover.out
           go tool cover -func cover.out
