@@ -19,7 +19,6 @@ on:
 
 env:
   LOCATION: ${{ secrets.LOCATION }}
-  TRIVY_VERSION: "0.46.0"
   PROJECT_ID : ${{ secrets.PROJECT_ID }}
   APP_VERSION: ${{ github.sha }}
   INSTANCE_ID: ${{ secrets.INSTANCE_ID }}
