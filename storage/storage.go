@@ -17,14 +17,12 @@ package storage
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 
 	"cloud.google.com/go/spanner"
-	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
 )
@@ -37,10 +35,10 @@ type Storage struct {
 // storage - global instance of storage
 var storage *Storage
 
-func initSpannerDriver(instance string) *spanner.Client {
+func initSpannerDriver() *spanner.Client {
 	conf := spanner.ClientConfig{}
 
-	str := "projects/" + config.ConfigurationMap.GoogleProjectID + "/instances/" + instance + "/databases/" + config.ConfigurationMap.SpannerDb
+	str := "projects/" + models.GlobalConfig.Spanner.ProjectID + "/instances/" + models.GlobalConfig.Spanner.InstanceID + "/databases/" + models.GlobalConfig.Spanner.DatabaseName
 	Client, err := spanner.NewClientWithConfig(context.Background(), str, conf)
 	if err != nil {
 		logger.LogFatal(err)
@@ -50,14 +48,10 @@ func initSpannerDriver(instance string) *spanner.Client {
 
 // InitializeDriver - this will Initialize databases object in global map
 func InitializeDriver() {
-
 	storage = new(Storage)
 	storage.spannerClient = make(map[string]*spanner.Client)
-	for _, v := range models.SpannerTableMap {
-		if _, ok := storage.spannerClient[v]; !ok {
-			storage.spannerClient[v] = initSpannerDriver(v)
-		}
-	}
+	storage.spannerClient[models.GlobalConfig.Spanner.InstanceID] = initSpannerDriver()
+
 }
 
 // Close - This gracefully returns the session pool objects, when driver gets exit signal
@@ -81,10 +75,9 @@ func GetStorageInstance() *Storage {
 			InitializeDriver()
 		}
 	})
-	fmt.Println("storage", storage)
 	return storage
 }
 
-func (s Storage) getSpannerClient(tableName string) *spanner.Client {
-	return s.spannerClient["spanner-instance-dev"]
+func (s Storage) getSpannerClient(_ string) *spanner.Client {
+	return s.spannerClient[models.GlobalConfig.Spanner.InstanceID]
 }
