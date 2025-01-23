@@ -111,6 +111,7 @@ jobs:
         id: unit_test
         run: |
             envsubst < config.yaml > config.yaml.tmp && mv config.yaml.tmp config.yaml
+            cat config.yaml
             go mod tidy
             go test -v -short ./{/api/v1,/initializer,/storage,/utils,/service/services,/service/spanner} -coverprofile=cover.out | tee -a ${GITHUB_WORKSPACE}/unit_test_result.txt ; (exit ${PIPESTATUS[0]})
             go tool cover -func cover.out | grep total: >> ${GITHUB_WORKSPACE}/unit_test_result.txt
@@ -229,6 +230,7 @@ jobs:
         id: unit_test
         run: |
           envsubst < config.yaml > config.yaml.tmp && mv config.yaml.tmp config.yaml
+          cat config.yaml
           go mod tidy
           go test -v -short ./{/api/v1,/initializer,/config,/storage,/utils,/service/services,/service/spanner} -coverprofile=cover.out
           go tool cover -func cover.out
