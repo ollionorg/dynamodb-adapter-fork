@@ -46,7 +46,7 @@ var (
 )
 
 func main() {
-	config, err := loadConfig("config.yaml")
+	config, err := loadConfig("../config.yaml")
 	if err != nil {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
