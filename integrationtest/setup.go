@@ -114,10 +114,10 @@ func createDatabase(w io.Writer, db string) error {
 		return err
 	}
 	defer adminClient.Close()
-
+	fmt.Println("CREATE DATABASE " + matches[2])
 	op, err := adminClient.CreateDatabase(ctx, &adminpb.CreateDatabaseRequest{
 		Parent:          matches[1],
-		CreateStatement: "CREATE DATABASE `" + matches[2] + "`",
+		CreateStatement: "CREATE DATABASE " + matches[2],
 		ExtraStatements: []string{
 			`CREATE TABLE dynamodb_adapter_table_ddl (
 				column	       STRING(MAX),
