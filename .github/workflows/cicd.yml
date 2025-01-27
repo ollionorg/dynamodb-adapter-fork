@@ -3,7 +3,7 @@ name: DynamoDB-CI
 on:
   push:
     branches:
-      - develop
+      - feat/GOOGLEPS04-68
 
   pull_request:
     types:
@@ -12,7 +12,7 @@ on:
       - closed
       - synchronize
     branches:
-      - develop
+      - feat/GOOGLEPS04-68
 
   release:
     types: [ published ]
