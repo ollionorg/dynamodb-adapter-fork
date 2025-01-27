@@ -56,7 +56,6 @@ func main() {
 		"projects/%s/instances/%s/databases/%s",
 		config.Spanner.ProjectID, config.Spanner.InstanceID, config.Spanner.DatabaseName,
 	)
-	fmt.Println(databaseName)
 	switch cmd := os.Args[1]; cmd {
 	case "setup":
 		w := log.Writer()
@@ -115,7 +114,6 @@ func createDatabase(w io.Writer, db string) error {
 		return err
 	}
 	defer adminClient.Close()
-	fmt.Println("CREATE DATABASE " + matches[2])
 	op, err := adminClient.CreateDatabase(ctx, &adminpb.CreateDatabaseRequest{
 		Parent:          matches[1],
 		CreateStatement: "CREATE DATABASE " + matches[2],
