@@ -146,6 +146,7 @@ jobs:
         env:
           INTEGRATION_TEST_CRED_PATH: ${{ secrets.INTEGRATION_TEST_CRED_PATH }}
         run: |
+            envsubst < config.yaml > config.yaml.tmp && mv config.yaml.tmp config.yaml
             go run "${GITHUB_WORKSPACE}/integrationtest/setup.go" setup
             go test "${GITHUB_WORKSPACE}/integrationtest/api_test.go" | tee -a ${GITHUB_WORKSPACE}/integration_test_result.txt
             go run "${GITHUB_WORKSPACE}/integrationtest/setup.go" teardown
