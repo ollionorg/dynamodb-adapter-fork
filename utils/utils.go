@@ -187,11 +187,11 @@ func ConvertDynamoTypeToSpannerType(dynamoType string) string {
 	case "NULL":
 		return "NULL"
 	case "SS":
-		return "ARRAY<STRING(MAX)>"
+		return "ARRAY<STRING>"
 	case "NS":
-		return "ARRAY<FLOAT64>"
+		return "ARRAY<INT64>"
 	case "BS":
-		return "ARRAY<BYTES(MAX)>"
+		return "ARRAY<BYTES>"
 	case "M":
 		return "JSON"
 	case "L":

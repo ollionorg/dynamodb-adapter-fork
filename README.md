@@ -60,23 +60,18 @@ DynamoDB Adapter currently supports the following DynamoDB data types
 ## Configuration
 
 ### config.yaml
+This file defines the necessary settings for the adapter. A sample configuration might look like this:
 
-This file defines the necessary settings for the adapter.
-A sample configuration might look like this:
 
-spanner:
+    spanner:
         project_id: "my-project-id"
         instance_id: "my-instance-id"
         database_name: "my-database-name"
-        query_limit: "query_limit"
-        dynamo_query_limit: "dynamo_query_limit"
 
 The fields are:
 project_id: The Google Cloud project ID.
 instance_id: The Spanner instance ID.
 database_name: The database name in Spanner.
-query_limit: Database query limit.
-dynamo_query_limit: DynamoDb query limit.
 
 ### dynamodb_adapter_table_ddl
 
@@ -88,58 +83,43 @@ special characters in column names while Cloud Spanner only supports
 underscores(_). For more: [Spanner Naming Conventions](https://cloud.google.com/spanner/docs/data-definition-language#naming_conventions)
 
 ### Initialization Modes
-
 DynamoDB Adapter supports two modes of initialization:
 
 #### Dry Run Mode
-
 This mode generates the Spanner queries required to:
 
 Create the dynamodb_adapter_table_ddl table in Spanner.
 Insert metadata for all DynamoDB tables into dynamodb_adapter_table_ddl.
-These queries are printed to the console without executing them on Spanner,
-allowing you to review them before making changes.
+These queries are printed to the console without executing them on Spanner, allowing you to review them before making changes.
 
 ```sh
-go run config-files/init.go --dry_run
+go run init.go --dry_run
 ```
 
 #### Execution Mode
-
-This mode executes the Spanner queries generated
-during the dry run on the Spanner instance. It will:
+This mode executes the Spanner queries generated during the dry run on the Spanner instance. It will:
 
 Create the dynamodb_adapter_table_ddl table in Spanner if it does not exist.
 Insert metadata for all DynamoDB tables into the dynamodb_adapter_table_ddl table.
 
 ```sh
-
-go run config-files/init.go
-
+go run init.go
 ```
 
 ### Prerequisites for Initialization
-
 AWS CLI:
 Configure AWS credentials:
-
 ```sh
-
 aws configure set aws_access_key_id YOUR_ACCESS_KEY
 aws configure set aws_secret_access_key YOUR_SECRET_KEY
 aws configure set default.region YOUR_REGION
 aws configure set aws_session_token YOUR_SESSION_TOKEN
-
 ```
-
 Google Cloud CLI:
 Authenticate and set up your environment:
-
 ```sh
-
 gcloud auth application-default login
 gcloud config set project [MY_PROJECT_NAME]
-
 ```
 
 ## Starting DynamoDB Adapter
@@ -166,13 +146,11 @@ Set the GCLOUD_PROJECT environment variable to your Google Cloud project ID:
 
 gcloud config set project [MY_PROJECT NAME]
 
-```
-
 ```sh
-
 go run main.go
-
 ```
+
+
 
 ```
 

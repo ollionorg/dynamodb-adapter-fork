@@ -25,8 +25,8 @@ import (
 
 // InitAll - this will initialize all the project object
 // Config, storage and all other global objects are initialize
-func InitAll(filepath string) error {
-	config.InitConfig(filepath)
+func InitAll() error {
+	config.InitConfig()
 	storage.InitializeDriver()
 	err := spanner.ParseDDL(true)
 	if err != nil {

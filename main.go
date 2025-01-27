@@ -37,7 +37,7 @@ import (
 // @BasePath /v1
 func main() {
 
-	initErr := initializer.InitAll("config.yaml")
+	initErr := initializer.InitAll()
 	if initErr != nil {
 		log.Fatalln(initErr)
 	}
