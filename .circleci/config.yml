@@ -5,8 +5,8 @@ version: 2
 jobs:
   build:
     docker:
-      - image: cimg/go:1.22
-    working_directory: ~/project
+      - image: circleci/golang:1.22
+    working_directory: /go/src/github.com/cloudspannerecosystem/dynamodb-adapter
     steps:
       - checkout
       - restore_cache:
@@ -37,16 +37,16 @@ jobs:
 
   unit_test:
     docker:
-      - image: cimg/go:1.22
-    working_directory: ~/project
+      - image: circleci/golang:1.22
+    working_directory: /go/src/github.com/cloudspannerecosystem/dynamodb-adapter
     steps:
       - checkout
       - run: go test -v -short ./...
 
   integration_test:
     docker:
-      - image: cimg/go:1.22
-    working_directory: ~/project
+      - image: circleci/golang:1.22
+    working_directory: /go/src/github.com/cloudspannerecosystem/dynamodb-adapter
     steps:
       - checkout
       - run:
