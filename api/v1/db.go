@@ -17,9 +17,9 @@ package v1
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -148,6 +148,8 @@ func put(ctx context.Context, tableName string, putObj map[string]interface{}, e
 	sKey := tableConf.SortKey
 	pKey := tableConf.PartitionKey
 	var oldResp map[string]interface{}
+
+	fmt.Println("putObj-->", putObj)
 
 	oldResp, err = storage.GetStorageInstance().SpannerGet(ctx, tableName, putObj[pKey], putObj[sKey], nil)
 	if err != nil {
@@ -683,7 +685,46 @@ func ExecuteStatement(c *gin.Context) {
 	if err := c.ShouldBindJSON(&execStmt); err != nil {
 		c.JSON(errors.New("ValidationException", err).HTTPResponse(execStmt))
 	} else {
-		request, _ := json.Marshal(execStmt)
-		fmt.Println("ExecuteStatement--->", string(request))
+		execStmt.TableName = extractTableName(execStmt.Statement)
+		res, err := services.ExecuteStatement(c.Request.Context(), execStmt)
+		if err == nil {
+			changedOutput := ChangeQueryResponseColumn(execStmt.TableName, res)
+			if _, ok := changedOutput["Items"]; ok && changedOutput["Items"] != nil {
+				itemsOutput, err := ChangeMaptoDynamoMap(changedOutput["Items"])
+				if err != nil {
+					c.JSON(errors.HTTPResponse(err, "ItemsChangeError"))
+				}
+				changedOutput["Items"] = itemsOutput["L"]
+			}
+			if _, ok := changedOutput["LastEvaluatedKey"]; ok && changedOutput["LastEvaluatedKey"] != nil {
+				changedOutput["LastEvaluatedKey"], err = ChangeMaptoDynamoMap(changedOutput["LastEvaluatedKey"])
+				if err != nil {
+					c.JSON(errors.HTTPResponse(err, "LastEvaluatedKeyChangeError"))
+				}
+			}
+			c.JSON(http.StatusOK, changedOutput)
+		} else {
+			c.JSON(errors.HTTPResponse(err, execStmt))
+		}
+
 	}
+}
+
+// extractTableName extracts the table name from a PartiQL query.
+func extractTableName(query string) string {
+	patterns := []string{
+		`(?i)FROM\s+"?(\w+)"?`,          // Matches SELECT and DELETE queries
+		`(?i)INSERT\s+INTO\s+"?(\w+)"?`, // Matches INSERT queries
+		`(?i)UPDATE\s+"?(\w+)"?`,        // Matches UPDATE queries
+	}
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindStringSubmatch(query)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+	}
+
+	return ""
 }

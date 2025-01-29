@@ -471,7 +471,7 @@ var (
 	queryTestCaseOutput16 = `{"Count":1,"Items":[]}`
 )
 
-//Test Data for Scan API
+// Test Data for Scan API
 var (
 	ScanTestCase1Name = "1: Wrong URL"
 	ScanTestCase1     = models.ScanMeta{
@@ -589,7 +589,7 @@ var (
 	ScanTestCase13Output = `{"Count":5,"Items":[]}`
 )
 
-//Test Data for UpdateItem API
+// Test Data for UpdateItem API
 var (
 
 	//200 Status check
@@ -728,7 +728,7 @@ var (
 	}
 )
 
-//Test Data for PutItem API
+// Test Data for PutItem API
 var (
 	//400 bad request
 	PutItemTestCase1Name = "1: only tablename passed"
@@ -839,7 +839,7 @@ var (
 	}
 )
 
-//Test Data DeleteItem API
+// Test Data DeleteItem API
 var (
 	DeleteItemTestCase1Name = "1: Only TableName passed"
 	DeleteItemTestCase1     = models.Delete{
@@ -926,7 +926,7 @@ var (
 	}
 )
 
-//test Data for BatchWriteItem API
+// test Data for BatchWriteItem API
 var (
 	BatchWriteItemTestCase1Name = "1: Only Table name passed"
 	BatchWriteItemTestCase1     = models.BatchWriteItem{
@@ -1301,6 +1301,88 @@ var (
 						},
 					},
 				},
+			},
+		},
+	}
+)
+
+// test Data for ExecuteStatement API
+var (
+	ExecuteStatementTestCase1Name = "1: Insert Query for ExecuteStatement"
+	ExecuteStatementCase1         = models.ExecuteStatement{
+		Statement: "INSERT INTO employee VALUE {'emp_id': 9, 'first_name': 'Marc', 'last_name': 'Richards1', 'age': 10, 'address': 'Shamli'}",
+	}
+
+	ExecuteStatementTestCase2Name = "2: Insert Query for ExecuteStatement"
+	ExecuteStatementCase2         = models.ExecuteStatement{
+		Statement: "INSERT INTO employee VALUE {'emp_id': ?, 'first_name': ?, 'last_name': ?, 'age': ?, 'address': ?}",
+		Parameters: []*dynamodb.AttributeValue{
+			{
+				N: aws.String("10"),
+			},
+			{
+				S: aws.String("Shoaib"),
+			},
+			{
+				S: aws.String("Jarman"),
+			},
+			{
+				N: aws.String("32"),
+			},
+			{
+				S: aws.String("Rampur"),
+			},
+		},
+	}
+	ExecuteStatementTestCase3Name = "3: Select Query for ExecuteStatement Non Parameterised"
+	ExecuteStatementCase3         = models.ExecuteStatement{
+		Limit:     10,
+		Statement: "SELECT * FROM employee WHERE emp_id = 1",
+	}
+	ExecuteStatementCase3Output = `{"Items":[{"address":{"S":"Shamli"},"age":{"N":"10"},"emp_id":{"N":"1"},"first_name":{"S":"Marc"},"last_name":{"S":"Richards"}}]}`
+
+	ExecuteStatementTestCase4Name = "4: Select Query for ExecuteStatement Parameterised Statement"
+	ExecuteStatementCase4         = models.ExecuteStatement{
+		Limit:     10,
+		Statement: "SELECT * FROM employee WHERE emp_id = ?",
+		Parameters: []*dynamodb.AttributeValue{
+			{
+				N: aws.String("1"),
+			},
+		},
+	}
+	ExecuteStatementTestCase5Name = "5: Update Query for ExecuteStatement Non Parameterised"
+	ExecuteStatementCase5         = models.ExecuteStatement{
+		Statement: "UPDATE employee SET age = 11, address = 'New Shamli' WHERE emp_id = 9",
+	}
+
+	ExecuteStatementTestCase6Name = "5: Update Query for ExecuteStatement Non Parameterised"
+	ExecuteStatementCase6         = models.ExecuteStatement{
+		Statement: "UPDATE employee SET address = ?, age = ? WHERE emp_id = ?",
+		Parameters: []*dynamodb.AttributeValue{
+			{
+				S: aws.String("Bengaluru"),
+			},
+			{
+				N: aws.String("33"),
+			},
+			{
+				N: aws.String("10"),
+			},
+		},
+	}
+
+	ExecuteStatementTestCase7Name = "5: Delete Query for ExecuteStatement Non Parameterised"
+	ExecuteStatementCase7         = models.ExecuteStatement{
+		Statement: "DELETE FROM employee WHERE emp_id = 9",
+	}
+
+	ExecuteStatementTestCase8Name = "5: Delete Query for ExecuteStatement Non Parameterised"
+	ExecuteStatementCase8         = models.ExecuteStatement{
+		Statement: "DELETE FROM employee WHERE emp_id = ?",
+		Parameters: []*dynamodb.AttributeValue{
+			{
+				N: aws.String("10"),
 			},
 		},
 	}
@@ -1737,7 +1819,26 @@ func testBatchWriteItemAPI(t *testing.T) {
 	}
 	apitest.RunTests(t, tests)
 }
+func testExecuteStementAPI(t *testing.T) {
+	apitest := apitesting.APITest{
+		GetHTTPHandler: func(ctx context.Context, t *testing.T) http.Handler {
+			return handlerInitFunc()
+		},
+	}
+	tests := []apitesting.APITestCase{
+		createStatusCheckPostTestCase(ExecuteStatementTestCase1Name, "/v1", "ExecuteStatement", http.StatusOK, ExecuteStatementCase1),
+		createStatusCheckPostTestCase(ExecuteStatementTestCase2Name, "/v1", "ExecuteStatement", http.StatusOK, ExecuteStatementCase2),
+		createStatusCheckPostTestCase(ExecuteStatementTestCase5Name, "/v1", "ExecuteStatement", http.StatusOK, ExecuteStatementCase5),
+		createStatusCheckPostTestCase(ExecuteStatementTestCase6Name, "/v1", "ExecuteStatement", http.StatusOK, ExecuteStatementCase6),
 
+		createPostTestCase(ExecuteStatementTestCase3Name, "/v1", "ExecuteStatement", ExecuteStatementCase3Output, ExecuteStatementCase3),
+		createPostTestCase(ExecuteStatementTestCase4Name, "/v1", "ExecuteStatement", ExecuteStatementCase3Output, ExecuteStatementCase4),
+
+		createStatusCheckPostTestCase(ExecuteStatementTestCase7Name, "/v1", "ExecuteStatement", http.StatusOK, ExecuteStatementCase7),
+		createStatusCheckPostTestCase(ExecuteStatementTestCase8Name, "/v1", "ExecuteStatement", http.StatusOK, ExecuteStatementCase8),
+	}
+	apitest.RunTests(t, tests)
+}
 func TestApi(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration tests in short mode")
@@ -1753,6 +1854,7 @@ func TestApi(t *testing.T) {
 		"PutItemAPI",
 		"DeleteItemAPI",
 		"BatchWriteItemAPI",
+		"ExecuteStementAPI",
 	}
 
 	var tests = map[string]func(t *testing.T){
@@ -1764,6 +1866,7 @@ func TestApi(t *testing.T) {
 		"PutItemAPI":        testPutItemAPI,
 		"DeleteItemAPI":     testDeleteItemAPI,
 		"BatchWriteItemAPI": testBatchWriteItemAPI,
+		"ExecuteStementAPI": testExecuteStementAPI,
 	}
 
 	// run the tests

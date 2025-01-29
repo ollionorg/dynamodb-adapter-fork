@@ -18,12 +18,16 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"hash/fnv"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"cloud.google.com/go/spanner"
 	"github.com/ahmetb/go-linq"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
@@ -262,6 +266,9 @@ func QueryAttributes(ctx context.Context, query models.Query) (map[string]interf
 		return nil, hash, err
 	}
 	logger.LogDebug(stmt)
+	fmt.Println("stmt-->", stmt)
+	fmt.Println("cols->", cols)
+	fmt.Println("sCountQuery ->", isCountQuery)
 	resp, err := storage.GetStorageInstance().ExecuteSpannerQuery(ctx, query.TableName, cols, isCountQuery, stmt)
 	if err != nil {
 		return nil, hash, err
@@ -502,6 +509,10 @@ func Delete(ctx context.Context, tableName string, primaryKeyMap map[string]inte
 	if err != nil {
 		return err
 	}
+	fmt.Println("condExpression-->", condExpression)
+	fmt.Println("expr-->", expr)
+	a, _ := json.Marshal(e)
+	fmt.Println("e-->", string(a))
 	return storage.GetStorageInstance().SpannerDelete(ctx, tableName, primaryKeyMap, e, expr)
 }
 
@@ -552,7 +563,6 @@ func Scan(ctx context.Context, scanData models.ScanMeta) (map[string]interface{}
 	for k, v := range query.ExpressionAttributeNames {
 		query.FilterExp = strings.ReplaceAll(query.FilterExp, k, v)
 	}
-
 	rs, _, err := QueryAttributes(ctx, query)
 	return rs, err
 }
@@ -589,25 +599,467 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 }
 
 // ExecuteStatement service
-func ExecuteStatement(ctx context.Context, scanData models.ExecuteStatement) (map[string]interface{}, error) {
-	query := models.Query{}
-	query.TableName = scanData.TableName
-	query.Limit = scanData.Limit
-	if query.Limit == 0 {
-		query.Limit = config.ConfigurationMap.QueryLimit
-	}
-	query.StartFrom = scanData.StartFrom
-	query.RangeValMap = scanData.ExpressionAttributeMap
-	query.IndexName = scanData.IndexName
-	query.FilterExp = scanData.FilterExpression
-	query.ExpressionAttributeNames = scanData.ExpressionAttributeNames
-	query.OnlyCount = scanData.OnlyCount
-	query.ProjectionExpression = scanData.ProjectionExpression
+func ExecuteStatement(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
 
-	for k, v := range query.ExpressionAttributeNames {
-		query.FilterExp = strings.ReplaceAll(query.FilterExp, k, v)
+	query := strings.TrimSpace(executeStatement.Statement) // Remove any leading or trailing whitespace
+	queryUpper := strings.ToUpper(query)
+
+	// Regular expressions to match the beginning of the query
+	selectRegex := regexp.MustCompile(`(?i)^\s*SELECT`)
+	insertRegex := regexp.MustCompile(`(?i)^\s*INSERT`)
+	updateRegex := regexp.MustCompile(`(?i)^\s*UPDATE`)
+	deleteRegex := regexp.MustCompile(`(?i)^\s*DELETE`)
+
+	switch {
+	case selectRegex.MatchString(queryUpper):
+		return ExecuteStatementForSelect(ctx, executeStatement)
+	case insertRegex.MatchString(queryUpper):
+		return ExecuteStatementForInsert(ctx, executeStatement)
+	case updateRegex.MatchString(queryUpper):
+		return ExecuteStatementForUpdate(ctx, executeStatement)
+	case deleteRegex.MatchString(queryUpper):
+		return ExecuteStatementForDelete(ctx, executeStatement)
+	default:
+		return nil, nil
 	}
 
-	rs, _, err := QueryAttributes(ctx, query)
-	return rs, err
+}
+
+func parsePartQlToSpannerforSelect(ctx context.Context, executeStatement models.ExecuteStatement) (spanner.Statement, error) {
+	stmt := spanner.Statement{}
+	var err error
+	if strings.Contains(executeStatement.Statement, "WHERE") {
+		whereClause := strings.Split(executeStatement.Statement, "WHERE")
+		if len(whereClause) != 2 {
+			return stmt, fmt.Errorf("invalid query with WHERE cluase")
+		}
+		if executeStatement.Parameters != nil && strings.Contains(executeStatement.Statement, "?") {
+			executeStatement.Statement, err = convertParamterisedQuery(executeStatement)
+			if err != nil {
+				return stmt, err
+			}
+		}
+	}
+
+	stmt.SQL = strings.ReplaceAll(executeStatement.Statement, `'`, `"`)
+	return stmt, nil
+}
+func convertParamterisedQuery(executeStatement models.ExecuteStatement) (string, error) {
+	newMap := make(map[string]*dynamodb.AttributeValue)
+	columnNames, err := extractColumnNames(executeStatement.Statement)
+	if err != nil {
+		return "", err
+	}
+
+	if len(columnNames) != len(executeStatement.Parameters) {
+		return "", fmt.Errorf("invalid params")
+	}
+	for i, val := range executeStatement.Parameters {
+		newMap[columnNames[i]] = val
+
+	}
+	configs, err := config.GetTableConf(executeStatement.TableName)
+	if err != nil {
+		return "", err
+	}
+
+	finalMapParameters, err := convertTypeValueAttribute(newMap, configs.AttributeTypes, "default")
+	if err != nil {
+		return "", err
+	}
+	for _, val := range finalMapParameters {
+		executeStatement.Statement = strings.Replace(executeStatement.Statement, "?", fmt.Sprintf("%v", val), 1)
+	}
+	return executeStatement.Statement, err
+}
+func parsePartQlToSpannerInsert(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	resultParam := make(map[string]*dynamodb.AttributeValue)
+
+	valueSplitString := strings.Split(executeStatement.Statement, "VALUE")
+	if len(valueSplitString) < 2 {
+		return result, fmt.Errorf("VALUES part missing for insert")
+	}
+
+	// Extract the part after "VALUE"
+	rawJSON := strings.TrimSpace(valueSplitString[1])
+	// Replace single quotes with double quotes to make it valid JSON
+	normalizeJSON := strings.ReplaceAll(rawJSON, `'`, `"`)
+	normalizeJSON = strings.ReplaceAll(normalizeJSON, `?`, `"?"`)
+
+	// Parse JSON string into a map
+	if err := json.Unmarshal([]byte(normalizeJSON), &result); err != nil {
+		return nil, fmt.Errorf("error parsing JSON: %v", err)
+	}
+	if executeStatement.Parameters != nil && strings.Contains(rawJSON, "?") {
+		// Parse JSON string into a map
+		if err := json.Unmarshal([]byte(normalizeJSON), &result); err != nil {
+			return nil, fmt.Errorf("error parsing JSON: %v", err)
+		}
+
+		i := 0
+		for key, _ := range result {
+			resultParam[key] = executeStatement.Parameters[i]
+			i++
+
+		}
+		configs, err := config.GetTableConf(executeStatement.TableName)
+		if err != nil {
+			return nil, err
+		}
+
+		result, err = convertTypeValueAttribute(resultParam, configs.AttributeTypes, "insert")
+		if err != nil {
+			return nil, err
+		}
+		colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(executeStatement.TableName)]
+		if !ok {
+			return nil, errors.New("ResourceNotFoundException", executeStatement.TableName)
+		}
+		result, err = convertType(result, colDLL)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
+}
+
+func parsePartQlToSpannerUpdate(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, map[string]interface{}, error) {
+	primaryKeyMap := make(map[string]interface{})
+	setValueMap := make(map[string]interface{})
+
+	setStatemenWithtAndWhereClause := strings.Split(executeStatement.Statement, "SET")
+	if len(setStatemenWithtAndWhereClause) < 2 {
+		return primaryKeyMap, setValueMap, fmt.Errorf("SET part missing for update")
+	}
+
+	setAndWhereClause := strings.Split(strings.ReplaceAll(setStatemenWithtAndWhereClause[1], `'`, ""), "WHERE")
+	if len(setAndWhereClause) < 2 {
+		return primaryKeyMap, setValueMap, fmt.Errorf("WHERE part missing for update")
+	}
+
+	setValueMapAttr := make(map[string]*dynamodb.AttributeValue)
+	// Extract the part after "SET Clause"
+	setClauseString := strings.TrimSpace(setAndWhereClause[0])
+	extractKeyValue := strings.Split(setClauseString, ",")
+	i := 0
+	paramLen := len(executeStatement.Parameters)
+	configAttr, err := config.GetTableConf(executeStatement.TableName)
+	if err != nil {
+		return nil, setValueMap, err
+	}
+	for _, value := range extractKeyValue {
+		extractKeyValueArray := strings.Split(value, "=")
+		setValueMap[strings.TrimSpace(extractKeyValueArray[0])] = strings.TrimSpace(extractKeyValueArray[1])
+		if paramLen > 0 && strings.Contains(extractKeyValueArray[1], "?") {
+
+			setValueMapAttr[strings.TrimSpace(extractKeyValueArray[0])] = executeStatement.Parameters[i]
+			setValueMap, err = convertTypeValueAttribute(setValueMapAttr, configAttr.AttributeTypes, "update")
+			if err != nil {
+				return nil, setValueMap, err
+			}
+		}
+		i++
+	}
+
+	// Extract the part after "WHERE Clause"
+	whereClauseString := strings.TrimSpace(setAndWhereClause[1])
+
+	// Replace single quotes with double quotes to make it valid String
+	KeyValueSplit := strings.Split(whereClauseString, "=")
+	if len(KeyValueSplit) != 2 {
+		return primaryKeyMap, setValueMap, fmt.Errorf("invalid where clause")
+	}
+
+	primaryKeyMapMapAttr := make(map[string]*dynamodb.AttributeValue)
+	primaryKeyMap[strings.TrimSpace(KeyValueSplit[0])] = strings.ReplaceAll(strings.TrimSpace(KeyValueSplit[1]), `"`, "")
+	if paramLen > 0 && strings.Contains(KeyValueSplit[1], "?") {
+		primaryKeyMapMapAttr[strings.TrimSpace(KeyValueSplit[0])] = executeStatement.Parameters[i]
+		primaryKeyMap, err = convertTypeValueAttribute(primaryKeyMapMapAttr, configAttr.AttributeTypes, "update")
+		if err != nil {
+			return primaryKeyMap, setValueMap, err
+		}
+	}
+
+	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(executeStatement.TableName)]
+	if !ok {
+		return primaryKeyMap, setValueMap, errors.New("ResourceNotFoundException", executeStatement.TableName)
+	}
+	primaryKeyMap, err = convertType(primaryKeyMap, colDLL)
+	if err != nil {
+		return nil, setValueMap, err
+	}
+
+	setValueMap, err = convertType(setValueMap, colDLL)
+	if err != nil {
+		return primaryKeyMap, setValueMap, err
+	}
+
+	return primaryKeyMap, setValueMap, nil
+}
+
+func parsePartQlToSpannerDelete(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
+	primaryKeyMap := make(map[string]interface{})
+
+	whereSplitString := strings.Split(executeStatement.Statement, "WHERE")
+	if len(whereSplitString) < 2 {
+		return primaryKeyMap, fmt.Errorf("WHERE part missing for insert")
+	}
+
+	// Extract the part after "VALUE"
+	rawJSON := strings.TrimSpace(whereSplitString[1])
+
+	// Replace single quotes with double quotes to make it valid String
+	KeyValueSplit := strings.Split(rawJSON, "=")
+	if len(whereSplitString) != 2 {
+		return primaryKeyMap, fmt.Errorf("invalid where clause")
+	}
+
+	paramLen := len(executeStatement.Parameters)
+	configAttr, err := config.GetTableConf(executeStatement.TableName)
+	if err != nil {
+		return primaryKeyMap, err
+	}
+	primaryKeyMapMapAttr := make(map[string]*dynamodb.AttributeValue)
+	primaryKeyMap[strings.TrimSpace(KeyValueSplit[0])] = strings.ReplaceAll(strings.TrimSpace(KeyValueSplit[1]), `"`, "")
+	if paramLen > 0 && strings.Contains(KeyValueSplit[1], "?") {
+		primaryKeyMapMapAttr[strings.TrimSpace(KeyValueSplit[0])] = executeStatement.Parameters[0]
+		primaryKeyMap, err = convertTypeValueAttribute(primaryKeyMapMapAttr, configAttr.AttributeTypes, "delete")
+		if err != nil {
+			return primaryKeyMap, err
+		}
+	}
+	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(executeStatement.TableName)]
+	if !ok {
+		return nil, errors.New("ResourceNotFoundException", executeStatement.TableName)
+	}
+	primaryKeyMap, _ = convertType(primaryKeyMap, colDLL)
+	return primaryKeyMap, nil
+}
+
+func convertType(pkeyMap map[string]interface{}, colDLL map[string]string) (map[string]interface{}, error) {
+	fmt.Println("pkeyMap--->", pkeyMap)
+	for k, val := range pkeyMap {
+		v, ok := colDLL[k]
+		if !ok {
+			return nil, fmt.Errorf("ResourceNotFoundException: %s", k)
+		}
+
+		switch v {
+		case "STRING(MAX)":
+			// Ensure the value is a string
+			pkeyMap[k] = fmt.Sprintf("%v", val)
+
+		case "INT64":
+			// Convert to int64
+			intValue, err := strconv.ParseInt(fmt.Sprintf("%v", val), 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("error converting to int64: %v", err)
+			}
+			pkeyMap[k] = intValue
+
+		case "FLOAT64":
+			// Convert to float64
+			floatValue, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+			if err != nil {
+				return nil, fmt.Errorf("error converting to float64: %v", err)
+			}
+			pkeyMap[k] = floatValue
+
+		case "NUMERIC":
+			// Treat same as FLOAT64 here or use a specific library for decimal types
+			numValue, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+			if err != nil {
+				return nil, fmt.Errorf("error converting to numeric: %v", err)
+			}
+			pkeyMap[k] = numValue
+
+		case "BOOL":
+			// Convert to boolean
+			boolValue, err := strconv.ParseBool(fmt.Sprintf("%v", val))
+			if err != nil {
+				return nil, fmt.Errorf("error converting to bool: %v", err)
+			}
+			pkeyMap[k] = boolValue
+
+		default:
+			return nil, fmt.Errorf("unsupported data type: %s", v)
+		}
+	}
+	return pkeyMap, nil
+}
+
+// contains function checks if a slice contains a specific string
+func contains(slice []string, item string) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
+		}
+	}
+	return false
+}
+func convertTypeValueAttribute(m map[string]*dynamodb.AttributeValue, attrMap map[string]string, queryType string) (map[string]interface{}, error) {
+	fmt.Println("m-->", m)
+	newMap := make(map[string]interface{})
+	for k, val := range m {
+		v, ok := attrMap[k]
+		if !ok {
+			return nil, fmt.Errorf("ResourceNotFoundException: %s", k)
+		}
+		supportedQueries := []string{"insert", "update", "delete"}
+		switch v {
+		case "S":
+			newMap[k] = fmt.Sprintf(`"%v"`, *val.S)
+
+			// Check if queryType is one of the supported types
+			if contains(supportedQueries, queryType) {
+				newMap[k] = *val.S // Assign value to the map
+			}
+		case "N":
+			newMap[k] = *val.N
+		case "BOOL":
+			newMap[k] = *val.BOOL
+		case "NULL":
+			newMap[k] = *val.NULL
+		case "B":
+			newMap[k] = &val.B
+		case "L":
+			newMap[k] = &val.L
+		default:
+			return nil, fmt.Errorf("unsupported data type: %s", v)
+		}
+	}
+	return newMap, nil
+}
+func ExecuteStatementForSelect(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
+	res, err := parsePartQlToSpannerforSelect(ctx, executeStatement)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println(res)
+	resp, err := storage.GetStorageInstance().ExecuteSpannerQuery(ctx, executeStatement.TableName, []string{}, false, res)
+	if err != nil {
+		return nil, err
+	}
+	finalResp := make(map[string]interface{})
+	finalResp["Items"] = resp
+	fmt.Println(finalResp)
+	return finalResp, nil
+}
+
+func ExecuteStatementForInsert(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
+	res, err := parsePartQlToSpannerInsert(ctx, executeStatement)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := Put(ctx, executeStatement.TableName, res, nil, "", nil, nil)
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func ExecuteStatementForUpdate(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
+	primaryKeyMap, setValueMap, err := parsePartQlToSpannerUpdate(ctx, executeStatement)
+	if err != nil {
+		return nil, err
+	}
+	// fetch old row to modify the column value
+	oldRes, err := GetWithProjection(ctx, executeStatement.TableName, primaryKeyMap, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	for key, val := range setValueMap {
+		oldRes[key] = val
+	}
+	_, err = Put(ctx, executeStatement.TableName, oldRes, nil, "", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return nil, err
+}
+
+func ExecuteStatementForDelete(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
+	primaryKeyMap, err := parsePartQlToSpannerDelete(ctx, executeStatement)
+	if err != nil {
+		return nil, err
+	}
+	err = Delete(ctx, executeStatement.TableName, primaryKeyMap, "", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return nil, err
+}
+
+// QueryType defines the type of SQL query
+type QueryType string
+
+const (
+	SelectType  QueryType = "SELECT"
+	InsertType  QueryType = "INSERT"
+	UpdateType  QueryType = "UPDATE"
+	DeletTypee  QueryType = "DELETE"
+	UnknownType QueryType = "UNKNOWN"
+)
+
+// splitAndAppendOperators function takes a query string, splits it by logical operators,
+// and appends any comparison operators found in each part.
+func splitAndAppendOperators(query string) ([]string, error) {
+	// Define regex patterns for logical and comparison operators
+	logicalOperatorPattern := `\s*(AND|OR)\s*`
+	comparisonOperatorPattern := `(?<![<>=!])\s*(=|<>|!=|>=|<=|>|<)\s*`
+
+	// Split by logical operators
+	logicalParts := regexp.MustCompile(logicalOperatorPattern).Split(query, -1)
+
+	// Result slices
+	var result []string
+
+	for _, part := range logicalParts {
+		part = strings.TrimSpace(part) // Trim whitespace
+
+		// Find comparison operators within the current part
+		comparisonOperators := regexp.MustCompile(comparisonOperatorPattern).FindAllString(part, -1)
+
+		// If there are any comparison operators, append them to the part
+		if len(comparisonOperators) > 0 {
+			for _, operator := range comparisonOperators {
+				part = strings.Replace(part, operator, operator+" ", 1) // Append space
+			}
+		}
+
+		result = append(result, part)
+	}
+
+	return result, nil
+}
+
+// extractColumnNames function takes a query string and extracts column names while removing spaces.
+func extractColumnNames(query string) ([]string, error) {
+	// Define regex to capture column names from the query
+	// This regex matches anything before a comparison operator in a condition
+	// It assumes that the column name will always be left of an operator
+	columnPattern := `(\w+)\s*(=|<>|!=|>=|<=|>|<)`
+
+	// Find all matches for column names in the query
+	matches := regexp.MustCompile(columnPattern).FindAllStringSubmatch(query, -1)
+
+	// Result slice to hold unique column names
+	uniqueColumns := make(map[string]struct{})
+	for _, match := range matches {
+		if len(match) > 1 {
+			columnName := strings.TrimSpace(match[1]) // Get column name and trim spaces
+			uniqueColumns[columnName] = struct{}{}    // Use a map to ensure uniqueness
+		}
+	}
+
+	// Convert keys of the map to a slice
+	var columnNames []string
+	for column := range uniqueColumns {
+		columnNames = append(columnNames, column)
+	}
+
+	return columnNames, nil
 }

@@ -18,6 +18,7 @@ package models
 import (
 	"sync"
 
+	"cloud.google.com/go/spanner"
 	"github.com/antonmedv/expr/vm"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
@@ -163,6 +164,7 @@ type TableConfig struct {
 	IsComplement     bool                   `json:"IsComplement,omitempty"`
 	TableSource      string                 `json:"TableSource,omitempty"`
 	ActualTable      string                 `json:"ActualTable,omitempty"`
+	AttributeTypes   map[string]string      `json:"AttributeTypes,omitempty"`
 }
 
 // BatchWriteItem for Batch Operation
@@ -284,4 +286,11 @@ type ExecuteStatement struct {
 	Parameters                          []*dynamodb.AttributeValue `json:"Parameters"`
 	ReturnValuesOnConditionCheckFailure string                     `json:"ReturnValuesOnConditionCheckFailure"`
 	Statement                           string                     `json:"Statement"`
+	TableName                           string                     `json:"TableName"`
+}
+
+type ExecuteStatementQuery struct {
+	PartiQl      string
+	Params       map[string]interface{}
+	SQLStatement spanner.Statement
 }
