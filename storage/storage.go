@@ -53,7 +53,8 @@ func InitializeDriver(ctx context.Context) error {
 		TracerEndpoint:   models.GlobalConfig.Otel.Traces.Endpoint,
 		MetricEndpoint:   models.GlobalConfig.Otel.Metrics.Endpoint,
 		ServiceName:      models.GlobalConfig.Otel.ServiceName,
-		OTELEnabled:      models.GlobalConfig.Otel.Enabled,
+		MetricsEnabled:   models.GlobalConfig.Otel.MetricsEnabled,
+		TracesEnabled:    models.GlobalConfig.Otel.TracesEnabled,
 		TraceSampleRatio: models.GlobalConfig.Otel.Traces.SamplingRatio,
 		Database:         models.GlobalConfig.Spanner.DatabaseName,
 		Instance:         models.GlobalConfig.Spanner.InstanceID,
@@ -94,10 +95,11 @@ func InitializeDriver(ctx context.Context) error {
 
 	if models.GlobalConfig.Otel == nil {
 		models.GlobalConfig.Otel = &models.OtelConfig{
-			Enabled: false,
+			MetricsEnabled: false,
+			TracesEnabled:  false,
 		}
 	} else {
-		if models.GlobalConfig.Otel.Enabled {
+		if models.GlobalConfig.Otel.TracesEnabled {
 			if models.GlobalConfig.Otel.Traces.SamplingRatio < 0 || models.GlobalConfig.Otel.Traces.SamplingRatio > 1 {
 				fmt.Errorf("Sampling Ratio for Otel Traces should be between 0 and 1]")
 			}

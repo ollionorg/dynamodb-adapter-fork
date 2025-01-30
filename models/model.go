@@ -33,7 +33,8 @@ type SpannerConfig struct {
 
 // OtelConfig defines the structure of the YAML configuration
 type OtelConfig struct {
-	Enabled                  bool   `yaml:"enabled"`
+	MetricsEnabled           bool   `yaml:"metricsEnabled"`
+	TracesEnabled            bool   `yaml:"tracesEnabled"`
 	EnabledClientSideMetrics bool   `yaml:"enabledClientSideMetrics"`
 	ServiceName              string `yaml:"serviceName"`
 	HealthCheck              struct {
