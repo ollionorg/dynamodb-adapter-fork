@@ -72,7 +72,7 @@ type GetItemMeta struct {
 	Key                      map[string]*dynamodb.AttributeValue `json:"Key"`
 }
 
-//BatchGetMeta struct
+// BatchGetMeta struct
 type BatchGetMeta struct {
 	RequestItems map[string]BatchGetWithProjectionMeta `json:"RequestItems"`
 }
@@ -135,7 +135,7 @@ type UpdateAttr struct {
 	ExpressionAttributeValues map[string]*dynamodb.AttributeValue `json:"ExpressionAttributeValues"`
 }
 
-//ScanMeta for Scan request
+// ScanMeta for Scan request
 type ScanMeta struct {
 	TableName                 string                              `json:"TableName"`
 	IndexName                 string                              `json:"IndexName"`
@@ -165,28 +165,28 @@ type TableConfig struct {
 	ActualTable      string                 `json:"ActualTable,omitempty"`
 }
 
-//BatchWriteItem for Batch Operation
+// BatchWriteItem for Batch Operation
 type BatchWriteItem struct {
 	RequestItems map[string][]BatchWriteSubItems `json:"RequestItems"`
 }
 
-//BatchWriteItemResponse for Batch Operation
+// BatchWriteItemResponse for Batch Operation
 type BatchWriteItemResponse struct {
 	UnprocessedItems map[string][]BatchWriteSubItems `json:"UnprocessedItems"`
 }
 
-//BatchWriteSubItems is for BatchWriteItem
+// BatchWriteSubItems is for BatchWriteItem
 type BatchWriteSubItems struct {
 	DelReq BatchDeleteItem `json:"DeleteRequest"`
 	PutReq BatchPutItem    `json:"PutRequest"`
 }
 
-//BatchDeleteItem is for BatchWriteSubItems
+// BatchDeleteItem is for BatchWriteSubItems
 type BatchDeleteItem struct {
 	Key map[string]*dynamodb.AttributeValue `json:"Key"`
 }
 
-//BatchPutItem is for BatchWriteSubItems
+// BatchPutItem is for BatchWriteSubItems
 type BatchPutItem struct {
 	Item map[string]*dynamodb.AttributeValue `json:"Item"`
 }
@@ -276,3 +276,60 @@ type StreamDataModel struct {
 	EventID        string                 `json:"EventId"`
 	EventSourceArn string                 `json:"EventSourceArn"`
 }
+
+// TransactGetItemsRequest represents the input structure for TransactGetItems API.
+type TransactGetItemsRequest struct {
+	TransactItems          []TransactGetItem `json:"TransactItems"`
+	ReturnConsumedCapacity string            `json:"ReturnConsumedCapacity,omitempty"`
+}
+
+// TransactGetItem represents a single Get operation inside TransactGetItems.
+type TransactGetItem struct {
+	Get GetItemRequest `json:"Get"`
+}
+
+// GetItemRequest represents the structure of a Get request.
+type GetItemRequest struct {
+	TableName                string                              `json:"TableName"`
+	Keys                     map[string]*dynamodb.AttributeValue `json:"Key"`
+	KeyArray                 []map[string]interface{}            `json:"KeyArray"`
+	ProjectionExpression     string                              `json:"ProjectionExpression,omitempty"`
+	ExpressionAttributeNames map[string]string                   `json:"ExpressionAttributeNames,omitempty"`
+}
+
+// TransactGetItemsResponse represents the response structure for TransactGetItems API.
+type TransactGetItemsResponse struct {
+	Responses        []map[string]AttributeValue `json:"Responses"`
+	ConsumedCapacity []ConsumedCapacity          `json:"ConsumedCapacity,omitempty"`
+}
+
+// ConsumedCapacity represents the consumed capacity of a DynamoDB operation.
+type ConsumedCapacity struct {
+	TableName     string  `json:"TableName"`
+	CapacityUnits float64 `json:"CapacityUnits"`
+}
+
+type AttributeValue struct {
+	S    string                    `json:"S,omitempty"`    // String
+	N    string                    `json:"N,omitempty"`    // Number
+	B    []byte                    `json:"B,omitempty"`    // Binary
+	BOOL *bool                     `json:"BOOL,omitempty"` // Boolean
+	NULL *bool                     `json:"NULL,omitempty"` // Null
+	SS   []string                  `json:"SS,omitempty"`   // String Set
+	NS   []string                  `json:"NS,omitempty"`   // Number Set
+	BS   [][]byte                  `json:"BS,omitempty"`   // Binary Set
+	L    []AttributeValue          `json:"L,omitempty"`    // List
+	M    map[string]AttributeValue `json:"M,omitempty"`    // Map
+}
+
+// TransactGetItemsResponse represents the output of the TransactGetItems operation.
+// type TransactGetItemsResponse struct {
+// 	Responses        []map[string]AttributeValue `json:"Responses"`
+// 	ConsumedCapacity []ConsumedCapacity          `json:"ConsumedCapacity,omitempty"`
+// }
+
+// // ConsumedCapacity represents the capacity units consumed by an operation.
+// type ConsumedCapacity struct {
+// 	TableName     *string  `json:"TableName,omitempty"`
+// 	CapacityUnits *float64 `json:"CapacityUnits,omitempty"`
+// }

@@ -18,6 +18,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"strconv"
 	"strings"
@@ -586,4 +587,51 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 		delete(updateResp, colsToRemove[i])
 	}
 	return updateResp, nil
+}
+
+func TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) ([]map[string]interface{}, error) {
+	// storageInstance := storage.GetStorageInstance()
+
+	// // Convert primary and secondary keys
+	// pValues, sValues := extractSpannerKeys(getRequest.Key)
+	// fmt.Println("597pvale", pValues, sValues)
+	// return storageInstance.SpannerTransactGetItems(ctx, getRequest.TableName, keys, strings.Split(projection, ","))
+
+	if len(keyMapArray) == 0 {
+		var resp = make([]map[string]interface{}, 0)
+		return resp, nil
+	}
+	tableConf, err := config.GetTableConf(getRequest.TableName)
+	if err != nil {
+		return nil, err
+	}
+	tableName := tableConf.ActualTable
+
+	projectionCols := getSpannerProjections(projectionExpression, tableName, expressionAttributeNames)
+	var pValues []interface{}
+	var sValues []interface{}
+	for i := 0; i < len(keyMapArray); i++ {
+		pValue := keyMapArray[i][tableConf.PartitionKey]
+		if tableConf.SortKey != "" {
+			sValue := keyMapArray[i][tableConf.SortKey]
+			sValues = append(sValues, sValue)
+		}
+		pValues = append(pValues, pValue)
+	}
+	fmt.Println("serices 621", pValues, sValues, projectionCols)
+	return storage.GetStorageInstance().SpannerTransactGetItems(ctx, tableName, pValues, sValues, projectionCols)
+}
+
+func extractSpannerKeys(key map[string]models.AttributeValue) ([]interface{}, []interface{}) {
+	var pValues []interface{}
+	var sValues []interface{}
+
+	for keyName, keyValue := range key {
+		if keyName == "partition_key" {
+			pValues = append(pValues, keyValue.S) // Assuming it's a string
+		} else {
+			sValues = append(sValues, keyValue.S)
+		}
+	}
+	return pValues, sValues
 }

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
@@ -58,8 +59,10 @@ func RouteRequest(c *gin.Context) {
 		Scan(c)
 	case "UpdateItem":
 		Update(c)
+	case "TransactGetItem":
+		TransactGetItems(c)
 	default:
-		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of" + amzTarget).
+		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of"+amzTarget).
 			HTTPResponse("X-Amz-Target Header not supported"))
 	}
 }
@@ -662,4 +665,149 @@ func batchUpdateItems(con context.Context, batchMetaUpdate models.BatchMetaUpdat
 		return err
 	}
 	return nil
+}
+
+func TransactGetItems(c *gin.Context) {
+	fmt.Println("inside transactGetItems")
+	start := time.Now()
+	defer PanicHandler(c)
+	defer c.Request.Body.Close()
+
+	// Extract tracing context
+	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
+	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
+	if err != nil {
+		logger.LogDebug(err)
+		spanContext = nil
+	}
+
+	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
+	c.Request = c.Request.WithContext(ctx)
+	defer span.Finish()
+	span = addParentSpanID(c, span)
+
+	// Parse request body into struct
+	var transactGetMeta models.TransactGetItemsRequest
+	fmt.Println("688", transactGetMeta)
+	if err := c.ShouldBindJSON(&transactGetMeta); err != nil {
+		c.JSON(errors.New("ValidationException", err).HTTPResponse(transactGetMeta))
+		return
+	}
+
+	output := make([]map[string]interface{}, 0) // List of item responses
+
+	for _, transactItem := range transactGetMeta.TransactItems {
+		getRequest := transactItem.Get
+
+		// Validate read permissions
+		if allow := services.MayIReadOrWrite(getRequest.TableName, false, ""); !allow {
+			c.JSON(http.StatusOK, gin.H{"Responses": []gin.H{}})
+			return
+		}
+		fmt.Println("704, ", getRequest.TableName, getRequest.Keys)
+		// Fetch data from Spanner
+		singleOutput, err := transactGetDataSingleTable(ctx, getRequest)
+		fmt.Println("707", singleOutput)
+		if err != nil {
+			c.JSON(errors.HTTPResponse(err, transactGetMeta))
+			return
+		}
+
+		// Convert Spanner output to DynamoDB format
+		currOutput, err := ChangeMaptoDynamoMap(singleOutput)
+		if err != nil {
+			c.JSON(errors.HTTPResponse(err, transactGetMeta))
+			return
+		}
+
+		output = append(output, currOutput)
+	}
+
+	// Send final response
+	c.JSON(http.StatusOK, map[string]interface{}{"Responses": output})
+
+	// Log slow transactions
+	if time.Since(start) > time.Second*1 {
+		go fmt.Println("TransactGetCall", transactGetMeta)
+	}
+}
+
+func transactGetDataSingleTable(ctx context.Context, getRequest models.GetItemRequest) ([]map[string]interface{}, error) {
+
+	// Resolve ProjectionExpression with ExpressionAttributeNames
+	// projection := resolveExpressionAttributeNames(getRequest.ProjectionExpression, getRequest.ExpressionAttributeNames)
+	// fmt.Println("736", projection)
+	// Extract primary key
+	//keys := extractSpannerKeys(getRequest.Keys)
+	//	fmt.Println("739", keys)
+	var err1 error
+	getRequest.KeyArray, err1 = ConvertDynamoArrayToMapArray(getRequest.TableName, []map[string]*dynamodb.AttributeValue{getRequest.Keys})
+	fmt.Println("744", getRequest.KeyArray)
+	if err1 != nil {
+		//return nil, nil, errors.New("ValidationException", err1.Error())
+	}
+	getRequest.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(getRequest.TableName, getRequest.ExpressionAttributeNames)
+	rows, err := services.TransactGetItems(ctx, getRequest, getRequest.KeyArray, getRequest.ProjectionExpression, getRequest.ExpressionAttributeNames)
+	fmt.Println("742", rows)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []map[string]interface{}
+
+	// Convert each row to DynamoDB format
+	for _, row := range rows {
+		resultMap, err := convertRowToDynamoFormat(row)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert resultMap to a map[string]interface{}
+		resultInterfaceMap, err := ConvertMapToInterface(resultMap)
+		if err != nil {
+			return nil, err
+		}
+
+		results = append(results, resultInterfaceMap)
+	}
+	fmt.Println("results", results)
+	return results, nil
+}
+
+// ConvertMapToInterface converts a map with models.AttributeValue to a map with interface{} values.
+func ConvertMapToInterface(input map[string]models.AttributeValue) (map[string]interface{}, error) {
+	output := make(map[string]interface{})
+	for key, value := range input {
+		// Convert each models.AttributeValue to its corresponding interface{}
+		convertedValue, err := convertAttributeValueToInterface(value)
+		if err != nil {
+			return nil, err
+		}
+		output[key] = convertedValue
+	}
+	return output, nil
+}
+
+// Convert models.AttributeValue to interface{}
+func convertAttributeValueToInterface(attrValue models.AttributeValue) (interface{}, error) {
+	// Check the type of AttributeValue and convert accordingly
+	switch {
+	case attrValue.S != "":
+		return attrValue.S, nil
+	case attrValue.N != "":
+		return attrValue.N, nil
+	case attrValue.BOOL != nil:
+		return *attrValue.BOOL, nil
+	case attrValue.L != nil:
+		return attrValue.L, nil
+	case attrValue.M != nil:
+		// Recursively convert map
+		convertedMap, err := ConvertMapToInterface(attrValue.M)
+		if err != nil {
+			return nil, err
+		}
+		return convertedMap, nil
+	default:
+		return nil, fmt.Errorf("unsupported AttributeValue type")
+	}
 }
