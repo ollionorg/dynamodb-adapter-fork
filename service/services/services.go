@@ -590,12 +590,6 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 }
 
 func TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) ([]map[string]interface{}, error) {
-	// storageInstance := storage.GetStorageInstance()
-
-	// // Convert primary and secondary keys
-	// pValues, sValues := extractSpannerKeys(getRequest.Key)
-	// fmt.Println("597pvale", pValues, sValues)
-	// return storageInstance.SpannerTransactGetItems(ctx, getRequest.TableName, keys, strings.Split(projection, ","))
 
 	if len(keyMapArray) == 0 {
 		var resp = make([]map[string]interface{}, 0)
@@ -622,16 +616,16 @@ func TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, key
 	return storage.GetStorageInstance().SpannerTransactGetItems(ctx, tableName, pValues, sValues, projectionCols)
 }
 
-func extractSpannerKeys(key map[string]models.AttributeValue) ([]interface{}, []interface{}) {
-	var pValues []interface{}
-	var sValues []interface{}
+// func extractSpannerKeys(key map[string]models.AttributeValue) ([]interface{}, []interface{}) {
+// 	var pValues []interface{}
+// 	var sValues []interface{}
 
-	for keyName, keyValue := range key {
-		if keyName == "partition_key" {
-			pValues = append(pValues, keyValue.S) // Assuming it's a string
-		} else {
-			sValues = append(sValues, keyValue.S)
-		}
-	}
-	return pValues, sValues
-}
+// 	for keyName, keyValue := range key {
+// 		if keyName == "partition_key" {
+// 			pValues = append(pValues, keyValue.S) // Assuming it's a string
+// 		} else {
+// 			sValues = append(sValues, keyValue.S)
+// 		}
+// 	}
+// 	return pValues, sValues
+// }

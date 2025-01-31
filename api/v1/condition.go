@@ -26,14 +26,12 @@ import (
 	"strconv"
 	"strings"
 
-	"cloud.google.com/go/spanner"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/service/services"
-	spannerpb "google.golang.org/genproto/googleapis/spanner/v1"
 )
 
 var operations = map[string]string{"SET": "(?i) SET ", "DELETE": "(?i) DELETE ", "ADD": "(?i) ADD ", "REMOVE": "(?i) REMOVE "}
@@ -767,86 +765,4 @@ func resolveExpressionAttributeNames(projection string, attrNames map[string]str
 		}
 	}
 	return strings.Join(tokens, ", ")
-}
-
-// extractSpannerKeys converts a DynamoDB key map to Spanner key format
-func extractSpannerKeys(dynamoKey map[string]models.AttributeValue) spanner.Key {
-	var keys []interface{}
-
-	for key, attrValue := range dynamoKey {
-		value, err := convertDynamoAttributeValueToSpanner(attrValue)
-		if err != nil {
-			fmt.Printf("Error converting key %s: %v\n", key, err)
-			continue
-		}
-		keys = append(keys, value)
-	}
-
-	return spanner.Key(keys)
-}
-
-// convertDynamoAttributeValueToSpanner converts DynamoDB AttributeValue to a native Go value for Spanner
-func convertDynamoAttributeValueToSpanner(attr models.AttributeValue) (interface{}, error) {
-	if attr.S != "" {
-		return attr.S, nil
-	} else if attr.N != "" {
-		return strconv.Atoi(attr.N) // Convert string to integer
-	} else if attr.BOOL != nil {
-		return *attr.BOOL, nil
-	}
-	return nil, fmt.Errorf("unsupported attribute type: %+v", attr)
-}
-
-// convertRowToDynamoFormat converts a Spanner row into a DynamoDB-style response.
-func convertRowToDynamoFormat(row map[string]interface{}) (map[string]models.AttributeValue, error) {
-	dynamoItem := make(map[string]models.AttributeValue)
-
-	for colName, colValue := range row {
-		colVal, ok := colValue.(spanner.GenericColumnValue)
-		if !ok {
-			return nil, fmt.Errorf("type assertion failed: expected spanner.GenericColumnValue, got %T", colValue)
-		}
-		// Convert Spanner value to DynamoDB AttributeValue
-		attrValue, err := spannerValueToDynamoAttribute(colVal)
-		if err != nil {
-			return nil, err
-		}
-
-		dynamoItem[colName] = attrValue
-	}
-
-	return dynamoItem, nil
-}
-
-// spannerValueToDynamoAttribute converts a Spanner GenericColumnValue into a DynamoDB-style AttributeValue.
-func spannerValueToDynamoAttribute(colValue spanner.GenericColumnValue) (models.AttributeValue, error) {
-	var attrValue models.AttributeValue
-
-	switch colValue.Type.Code {
-	case spannerpb.TypeCode_STRING:
-		var strValue string
-		if err := colValue.Decode(&strValue); err != nil {
-			return attrValue, err
-		}
-		attrValue.S = strValue
-
-	case spannerpb.TypeCode_INT64:
-		var intValue int64
-		if err := colValue.Decode(&intValue); err != nil {
-			return attrValue, err
-		}
-		attrValue.N = strconv.FormatInt(intValue, 10) // Store as string
-
-	case spannerpb.TypeCode_BOOL:
-		var boolValue bool
-		if err := colValue.Decode(&boolValue); err != nil {
-			return attrValue, err
-		}
-		attrValue.BOOL = &boolValue // Store as string
-
-	default:
-		return attrValue, fmt.Errorf("unsupported Spanner type: %v", colValue.Type.Code)
-	}
-
-	return attrValue, nil
 }

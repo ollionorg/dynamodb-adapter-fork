@@ -694,7 +694,7 @@ func TransactGetItems(c *gin.Context) {
 		return
 	}
 
-	output := make([]map[string]interface{}, 0) // List of item responses
+	output := make([]models.TransactGetItemResponse, 0) // List of item responses
 
 	for _, transactItem := range transactGetMeta.TransactItems {
 		getRequest := transactItem.Get
@@ -720,12 +720,15 @@ func TransactGetItems(c *gin.Context) {
 			return
 		}
 
-		output = append(output, currOutput)
+		// Append structured response including table name
+		output = append(output, models.TransactGetItemResponse{
+			TableName: getRequest.TableName,
+			Item:      currOutput,
+		})
 	}
 
 	// Send final response
-	c.JSON(http.StatusOK, map[string]interface{}{"Responses": output})
-
+	c.JSON(http.StatusOK, models.TransactGetItemsResponse{Responses: output})
 	// Log slow transactions
 	if time.Since(start) > time.Second*1 {
 		go fmt.Println("TransactGetCall", transactGetMeta)
@@ -733,13 +736,6 @@ func TransactGetItems(c *gin.Context) {
 }
 
 func transactGetDataSingleTable(ctx context.Context, getRequest models.GetItemRequest) ([]map[string]interface{}, error) {
-
-	// Resolve ProjectionExpression with ExpressionAttributeNames
-	// projection := resolveExpressionAttributeNames(getRequest.ProjectionExpression, getRequest.ExpressionAttributeNames)
-	// fmt.Println("736", projection)
-	// Extract primary key
-	//keys := extractSpannerKeys(getRequest.Keys)
-	//	fmt.Println("739", keys)
 	var err1 error
 	getRequest.KeyArray, err1 = ConvertDynamoArrayToMapArray(getRequest.TableName, []map[string]*dynamodb.AttributeValue{getRequest.Keys})
 	fmt.Println("744", getRequest.KeyArray)
@@ -752,62 +748,5 @@ func transactGetDataSingleTable(ctx context.Context, getRequest models.GetItemRe
 	if err != nil {
 		return nil, err
 	}
-
-	var results []map[string]interface{}
-
-	// Convert each row to DynamoDB format
-	for _, row := range rows {
-		resultMap, err := convertRowToDynamoFormat(row)
-		if err != nil {
-			return nil, err
-		}
-
-		// Convert resultMap to a map[string]interface{}
-		resultInterfaceMap, err := ConvertMapToInterface(resultMap)
-		if err != nil {
-			return nil, err
-		}
-
-		results = append(results, resultInterfaceMap)
-	}
-	fmt.Println("results", results)
-	return results, nil
-}
-
-// ConvertMapToInterface converts a map with models.AttributeValue to a map with interface{} values.
-func ConvertMapToInterface(input map[string]models.AttributeValue) (map[string]interface{}, error) {
-	output := make(map[string]interface{})
-	for key, value := range input {
-		// Convert each models.AttributeValue to its corresponding interface{}
-		convertedValue, err := convertAttributeValueToInterface(value)
-		if err != nil {
-			return nil, err
-		}
-		output[key] = convertedValue
-	}
-	return output, nil
-}
-
-// Convert models.AttributeValue to interface{}
-func convertAttributeValueToInterface(attrValue models.AttributeValue) (interface{}, error) {
-	// Check the type of AttributeValue and convert accordingly
-	switch {
-	case attrValue.S != "":
-		return attrValue.S, nil
-	case attrValue.N != "":
-		return attrValue.N, nil
-	case attrValue.BOOL != nil:
-		return *attrValue.BOOL, nil
-	case attrValue.L != nil:
-		return attrValue.L, nil
-	case attrValue.M != nil:
-		// Recursively convert map
-		convertedMap, err := ConvertMapToInterface(attrValue.M)
-		if err != nil {
-			return nil, err
-		}
-		return convertedMap, nil
-	default:
-		return nil, fmt.Errorf("unsupported AttributeValue type")
-	}
+	return ChangesArrayResponseToOriginalColumns(getRequest.TableName, rows), nil
 }

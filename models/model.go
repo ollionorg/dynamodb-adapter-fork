@@ -297,39 +297,18 @@ type GetItemRequest struct {
 	ExpressionAttributeNames map[string]string                   `json:"ExpressionAttributeNames,omitempty"`
 }
 
-// TransactGetItemsResponse represents the response structure for TransactGetItems API.
-type TransactGetItemsResponse struct {
-	Responses        []map[string]AttributeValue `json:"Responses"`
-	ConsumedCapacity []ConsumedCapacity          `json:"ConsumedCapacity,omitempty"`
-}
-
 // ConsumedCapacity represents the consumed capacity of a DynamoDB operation.
 type ConsumedCapacity struct {
 	TableName     string  `json:"TableName"`
 	CapacityUnits float64 `json:"CapacityUnits"`
 }
 
-type AttributeValue struct {
-	S    string                    `json:"S,omitempty"`    // String
-	N    string                    `json:"N,omitempty"`    // Number
-	B    []byte                    `json:"B,omitempty"`    // Binary
-	BOOL *bool                     `json:"BOOL,omitempty"` // Boolean
-	NULL *bool                     `json:"NULL,omitempty"` // Null
-	SS   []string                  `json:"SS,omitempty"`   // String Set
-	NS   []string                  `json:"NS,omitempty"`   // Number Set
-	BS   [][]byte                  `json:"BS,omitempty"`   // Binary Set
-	L    []AttributeValue          `json:"L,omitempty"`    // List
-	M    map[string]AttributeValue `json:"M,omitempty"`    // Map
+type TransactGetItemResponse struct {
+	TableName string                 `json:"TableName"`
+	Item      map[string]interface{} `json:"Item"`
 }
 
-// TransactGetItemsResponse represents the output of the TransactGetItems operation.
-// type TransactGetItemsResponse struct {
-// 	Responses        []map[string]AttributeValue `json:"Responses"`
-// 	ConsumedCapacity []ConsumedCapacity          `json:"ConsumedCapacity,omitempty"`
-// }
-
-// // ConsumedCapacity represents the capacity units consumed by an operation.
-// type ConsumedCapacity struct {
-// 	TableName     *string  `json:"TableName,omitempty"`
-// 	CapacityUnits *float64 `json:"CapacityUnits,omitempty"`
-// }
+// TransactGetItemsResponse represents the overall response structure for multiple TransactGetItems.
+type TransactGetItemsResponse struct {
+	Responses []TransactGetItemResponse `json:"Responses"`
+}

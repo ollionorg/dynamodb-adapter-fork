@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"math"
 	"reflect"
 	"regexp"
@@ -902,10 +901,13 @@ func checkInifinty(value float64, logData interface{}) error {
 
 func (s Storage) SpannerTransactGetItems(ctx context.Context, tableName string, pKeys, sKeys []interface{}, projectionCols []string) ([]map[string]interface{}, error) {
 	client := s.getSpannerClient(tableName)
-
 	// Start the transaction using the Spanner client
 	txn := client.ReadOnlyTransaction()
 	defer txn.Close()
+	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(tableName)]
+	if !ok {
+		return nil, errors.New("ResourceNotFoundException", tableName)
+	}
 
 	var keySet []spanner.KeySet
 
@@ -916,17 +918,16 @@ func (s Storage) SpannerTransactGetItems(ctx context.Context, tableName string, 
 			keySet = append(keySet, spanner.Key{pKeys[i], sKeys[i]})
 		}
 	}
-
-	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(tableName)]
-	if !ok {
-		return nil, errors.New("ResourceNotFoundException", tableName)
+	if len(projectionCols) == 0 {
+		var ok bool
+		projectionCols, ok = models.TableColumnMap[utils.ChangeTableNameForSpanner(tableName)]
+		if !ok {
+			return nil, errors.New("ResourceNotFoundException", tableName)
+		}
 	}
-	fmt.Println("924", colDLL)
-	fmt.Println("933", keySet)
+	// Perform the transaction read operation
 	itr := txn.Read(ctx, tableName, spanner.KeySets(keySet...), projectionCols)
-	fmt.Println("922", itr)
 	defer itr.Stop()
-
 	allRows := []map[string]interface{}{}
 	for {
 		r, err := itr.Next()
