@@ -35,41 +35,51 @@ the adapter.
 
 DynamoDB Adapter currently supports the folowing operations:
 
-| DynamoDB Action
-|----------------
-| BatchGetItem
-| BatchWriteItem
-| DeleteItem
-| GetItem
-| PutItem
-| Query
-| Scan
-| UpdateItem
+| DynamoDB Action |
+|----------------|
+| BatchGetItem |
+| BatchWriteItem |
+| DeleteItem |
+| GetItem |
+| PutItem |
+| Query |
+| Scan |
+| UpdateItem |
 
 ### Supported Data Types
 
 DynamoDB Adapter currently supports the following DynamoDB data types
 
-| DynamoDB Data Type            | Spanner Data Types
-| ------------------------------| ------------------
-| `N` (number type)             | `INT64`, `FLOAT64`, `NUMERIC`
-| `BOOL` (boolean)              | `BOOL`
-| `B` (binary type)             | `BYTES(MAX)`
-| `S` (string and data values)  | `STRING(MAX)`
+| DynamoDB Data Type            | Spanner Data Types |
+| ------------------------------| ------------------ |
+| `N` (number type)             | `INT64`, `FLOAT64`, `NUMERIC` |
+| `BOOL` (boolean)              | `BOOL` |
+| `B` (binary type)             | `BYTES(MAX)` |
+| `S` (string and data values)  | `STRING(MAX)` |
 | `SS` (string set)             | `ARRAY<STRING(MAX)>`
+| `NS` (number set)             | `ARRAY<FLOAT64>`
+| `BS` (binary set)             | `ARRAY<BYTES(MAX)>`
 
 ## Configuration
 
-DynamoDB Adapter requires two tables to store metadata and configuration for
-the project: `dynamodb_adapter_table_ddl` and
-`dynamodb_adapter_config_manager`. There are also three configuration files
-required by the adapter: `config.json`, `spanner.json`, `tables.json`.
+### config.yaml
 
-By default there are two folders **production** and **staging** in
-[config-files](./config-files). This is configurable by using the enviroment
-variable `ACTIVE_ENV` and can be set to other environment names, so long as
-there is a matching directory in the `config-files` directory. If `ACTIVE_ENV`
-is not set the default environtment is **staging**.
+This file defines the necessary settings for the adapter.
+A sample configuration might look like this:
+
+```yaml
+    spanner:
+        project_id: "my-project-id"
+        instance_id: "my-instance-id"
+        database_name: "my-database-name"
+        query_limit: "query-limit"
+        dynamo_query_limit: "dynamo-query-limit"
+```
+
+The fields are:
+project_id: The Google Cloud project ID.
+instance_id: The Spanner instance ID.
+database_name: The database name in Spanner.
 
 ### dynamodb_adapter_table_ddl
 
@@ -118,11 +128,11 @@ dynamodb_adapter_config_manager
 `config.json` contains the basic settings for DynamoDB Adapter; GCP Project,
 Cloud Spanner Database and query record limit.
 
-| Key               | Description
-| ----------------- | -----------
-| GoogleProjectID   | Your Google Project ID
-| SpannerDb         | Your Spanner Database Name
-| QueryLimit        | Default limit for the number of records returned in query
+| Key               | Description |
+| ----------------- | ----------- |
+| GoogleProjectID   | Your Google Project ID |
+| SpannerDb         | Your Spanner Database Name |
+| QueryLimit        | Default limit for the number of records returned in query |
 
 For example:
 
@@ -160,13 +170,13 @@ DynamoDB. This includes all table's primary key, columns and index information.
 This file supports the update and query operations by providing the primary
 key, sort key and any other indexes present.
 
-| Key               | Description
-| ----------------- | -----------
-| tableName         | Name of the table in DynamoDB
-| partitionKey      | Primary key of the table in DynamoDB
-| sortKey           | Sorting key of the table in DynamoDB
-| attributeTypes    | Key/Value list of column names and type
-| indices           | Collection of index objects that represent the indexes present in the DynamoDB table
+| Key               | Description |
+| ----------------- | ----------- |
+| tableName         | Name of the table in DynamoDB |
+| partitionKey      | Primary key of the table in DynamoDB |
+| sortKey           | Sorting key of the table in DynamoDB |
+| attributeTypes    | Key/Value list of column names and type |
+| indices           | Collection of index objects that represent the indexes present in the DynamoDB table |
 
 For example:
 
@@ -220,49 +230,9 @@ gcloud config set project [MY_PROJECT NAME]
 ```
 
 ```sh
-export ACTIVE_ENV=PRODUCTION
 go run main.go
 ```
 
-### Internal Startup Stages
-
-When DynamoDB Adapter starts up the following steps are performed:
-
-*   Stage 1 - Configuration is loaded according the Environment Variable
-    *ACTIVE_ENV*
-*   Stage 2 - Connections to Cloud Spanner instances are initialized.
-    Connections to all the instances are started it doesn't need to start the
-    connection again and again for every request.
-*   Stage 3 - `dynamodb_adapter_table_ddl` is parsed and will stored in ram for
-    faster access of data.
-*   Stage 4 - `dynamodb_adapter_config_manager` is loaded into ram. The adapter
-    will check every 1 min if configuration has been changed, if data is changed
-    it will be updated in memory.
-*   Stage 5 - Start the API listener to accept DynamoDB operations.
-
-## Advanced
-
-### Embedding the Configuration
-
-The rice-box package can be used to increase preformance by converting the
-configuration files into Golang source code and there by compiling them into
-the binary.  If they are not found in the binary rice-box will look to the
-disk for the configuration files.
-
-#### Install rice package
-
-This package is required to load the config files. This is required in the
-first step of the running DynamoDB Adapter.
-
-Follow the [link](https://github.com/GeertJohan/go.rice#installation).
-
-#### run command for creating the file
-
-This is required to increase the performance when any config file is changed
-so that configuration files can be loaded directly from go file.
-
-```sh
-rice embed-go
 ```
 
 ## API Documentation

@@ -115,11 +115,15 @@ func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys 
 
 // ExecuteSpannerQuery - this will execute query on spanner database
 func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []string, isCountQuery bool, stmt spanner.Statement) ([]map[string]interface{}, error) {
+
 	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
 	}
+
 	itr := s.getSpannerClient(table).Single().WithTimestampBound(spanner.ExactStaleness(time.Second*10)).Query(ctx, stmt)
+
 	defer itr.Stop()
 	allRows := []map[string]interface{}{}
 	for {
@@ -146,6 +150,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 		}
 		allRows = append(allRows, singleRow)
 	}
+
 	return allRows, nil
 }
 
@@ -762,23 +767,19 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 
 		var err error
 		switch v {
-		case "STRING(MAX)":
+		case "S":
 			err = parseStringColumn(r, i, k, singleRow)
-		case "BYTES(MAX)":
+		case "B":
 			err = parseBytesColumn(r, i, k, singleRow)
-		case "INT64":
-			err = parseInt64Column(r, i, k, singleRow)
-		case "FLOAT64":
-			err = parseFloat64Column(r, i, k, singleRow)
-		case "NUMERIC":
+		case "N":
 			err = parseNumericColumn(r, i, k, singleRow)
 		case "BOOL":
 			err = parseBoolColumn(r, i, k, singleRow)
-		case "ARRAY<STRING(MAX)>":
+		case "SS":
 			err = parseStringArrayColumn(r, i, k, singleRow)
-		case "ARRAY<BYTES>":
+		case "BS":
 			err = parseByteArrayColumn(r, i, k, singleRow)
-		case "ARRAY<FLOAT64>":
+		case "NS":
 			err = parseNumberArrayColumn(r, i, k, singleRow)
 		default:
 			return nil, errors.New("TypeNotFound", err, k)
@@ -818,30 +819,6 @@ func parseBytesColumn(r *spanner.Row, idx int, col string, row map[string]interf
 		}
 		m = processDecodedData(m)
 		row[col] = m
-	}
-	return nil
-}
-
-func parseInt64Column(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
-	var s spanner.NullInt64
-	err := r.Column(idx, &s)
-	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
-		return err
-	}
-	if !s.IsNull() {
-		row[col] = s.Int64
-	}
-	return nil
-}
-
-func parseFloat64Column(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
-	var s spanner.NullFloat64
-	err := r.Column(idx, &s)
-	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
-		return err
-	}
-	if !s.IsNull() {
-		row[col] = s.Float64
 	}
 	return nil
 }
