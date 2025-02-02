@@ -810,10 +810,10 @@ func parseBytesColumn(r *spanner.Row, idx int, col string, row map[string]interf
 	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
 		return err
 	}
+
 	if len(s) > 0 {
 		var m interface{}
 		if err := json.Unmarshal(s, &m); err != nil {
-			logger.LogError(err, string(s))
 			row[col] = string(s)
 			return nil
 		}
@@ -824,18 +824,13 @@ func parseBytesColumn(r *spanner.Row, idx int, col string, row map[string]interf
 }
 
 func parseNumericColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
-	var s spanner.NullNumeric
+	var s spanner.NullFloat64
 	err := r.Column(idx, &s)
 	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
 		return err
 	}
 	if !s.IsNull() {
-		val, _ := s.Numeric.Float64()
-		if s.Numeric.IsInt() {
-			row[col] = int64(val)
-		} else {
-			row[col] = val
-		}
+		row[col] = s.Float64
 	}
 	return nil
 }

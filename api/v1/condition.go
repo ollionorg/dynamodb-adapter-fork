@@ -86,72 +86,114 @@ func deleteEmpty(s []string) []string {
 	return r
 }
 
-func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignment bool) (map[string]interface{}, *models.UpdateExpressionCondition) {
+func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignment bool, oldRes map[string]interface{}) (map[string]interface{}, *models.UpdateExpressionCondition) {
 	expr := parseUpdateExpresstion(actionValue)
 	if expr != nil {
 		actionValue = expr.ActionVal
 		expr.AddValues = make(map[string]float64)
 	}
+
 	resp := make(map[string]interface{})
 	pairs := strings.Split(actionValue, ",")
 	var v []string
+
 	for _, p := range pairs {
 		var addValue float64
 		status := false
+
+		// Handle addition (e.g., "count + 1")
 		if strings.Contains(p, "+") {
 			tokens := strings.Split(p, "+")
 			tokens[1] = strings.TrimSpace(tokens[1])
 			p = tokens[0]
-			v1, ok := updateAtrr.ExpressionAttributeMap[(tokens[1])]
+			v1, ok := updateAtrr.ExpressionAttributeMap[tokens[1]]
 			if ok {
-				v2, ok := v1.(float64)
-				if ok {
+				switch v2 := v1.(type) {
+				case float64:
 					addValue = v2
 					status = true
-				} else {
-					v2, ok := v1.(int64)
-					if ok {
-						addValue = float64(v2)
-						status = true
-					}
+				case int64:
+					addValue = float64(v2)
+					status = true
 				}
 			}
 		}
+
+		// Handle subtraction (e.g., "count - 2")
 		if strings.Contains(p, "-") {
 			tokens := strings.Split(p, "-")
 			tokens[1] = strings.TrimSpace(tokens[1])
-			v1, ok := updateAtrr.ExpressionAttributeMap[(tokens[1])]
+			v1, ok := updateAtrr.ExpressionAttributeMap[tokens[1]]
 			if ok {
-				v2, ok := v1.(float64)
-				if ok {
+				switch v2 := v1.(type) {
+				case float64:
 					addValue = -v2
 					status = true
-
-				} else {
-					v2, ok := v1.(int64)
-					if ok {
-						addValue = float64(-v2)
-						status = true
-					}
+				case int64:
+					addValue = float64(-v2)
+					status = true
 				}
 			}
 		}
+
+		// Parse key-value pairs
 		if assignment {
 			v = strings.Split(p, " ")
 			v = deleteEmpty(v)
 		} else {
 			v = strings.Split(p, "=")
 		}
+
+		if len(v) < 2 {
+			continue
+		}
+
 		v[0] = strings.Replace(v[0], " ", "", -1)
 		v[1] = strings.Replace(v[1], " ", "", -1)
 
+		// Handle numeric additions
 		if status {
 			expr.AddValues[v[0]] = addValue
 		}
+
+		// **Detect Set Data Type and Append Values**
 		if updateAtrr.ExpressionAttributeNames[v[0]] != "" {
 			tmp, ok := updateAtrr.ExpressionAttributeMap[v[1]]
 			if ok {
-				resp[updateAtrr.ExpressionAttributeNames[v[0]]] = tmp
+				switch existingValue := tmp.(type) {
+				case []string: // String Set
+					if strSlice, ok := oldRes[v[0]].([]string); ok {
+						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
+							resp[v[0]] = append(strSlice, existingValue...)
+						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
+							resp[v[0]] = removeFromSlice(strSlice, existingValue)
+						}
+
+					} else {
+						resp[v[0]] = tmp
+					}
+				case []float64: // Number Set
+					if floatSlice, ok := oldRes[v[0]].([]float64); ok {
+						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
+							resp[v[0]] = append(floatSlice, existingValue...)
+						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
+							resp[v[0]] = removeFromSlice(floatSlice, existingValue)
+						}
+					} else {
+						resp[v[0]] = tmp
+					}
+
+				case [][]byte: // Binary Set
+					if byteSlice, ok := oldRes[v[0]].([][]byte); ok {
+						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
+							resp[v[0]] = append(byteSlice, existingValue...)
+						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
+							resp[v[0]] = removeFromByteSlice(byteSlice, existingValue)
+						}
+					} else {
+						resp[v[0]] = tmp
+					}
+				}
 			}
 		} else {
 			if strings.Contains(v[1], "%") {
@@ -171,11 +213,47 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 			}
 		}
 	}
+
 	// Merge primaryKeyMap and updateAttributes
 	for k, v := range updateAtrr.PrimaryKeyMap {
 		resp[k] = v
 	}
+
 	return resp, expr
+}
+
+func removeFromSlice[T comparable](slice []T, toRemove []T) []T {
+	result := []T{}
+	removeMap := make(map[T]struct{}, len(toRemove))
+
+	for _, val := range toRemove {
+		removeMap[val] = struct{}{}
+	}
+
+	for _, val := range slice {
+		if _, found := removeMap[val]; !found {
+			result = append(result, val)
+		}
+	}
+	return result
+}
+
+func removeFromByteSlice(slice [][]byte, toRemove [][]byte) [][]byte {
+	result := [][]byte{}
+
+	for _, item := range slice {
+		found := false
+		for _, rem := range toRemove {
+			if bytes.Equal(item, rem) { // Use bytes.Equal to compare byte slices
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func parseUpdateExpresstion(actionValue string) *models.UpdateExpressionCondition {
@@ -228,17 +306,17 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 	switch {
 	case action == "DELETE":
 		// perform delete
-		m, expr := parseActionValue(actionValue, updateAtrr, true)
+		m, expr := parseActionValue(actionValue, updateAtrr, true, oldRes)
 		res, err := services.Del(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, expr)
 		return res, m, err
 	case action == "SET":
 		// Update data in table
-		m, expr := parseActionValue(actionValue, updateAtrr, false)
+		m, expr := parseActionValue(actionValue, updateAtrr, false, oldRes)
 		res, err := services.Put(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes)
 		return res, m, err
 	case action == "ADD":
 		// Add data in table
-		m, expr := parseActionValue(actionValue, updateAtrr, true)
+		m, expr := parseActionValue(actionValue, updateAtrr, true, oldRes)
 		res, err := services.Add(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, updateAtrr.ExpressionAttributeMap, expr, oldRes)
 		return res, m, err
 
@@ -744,7 +822,7 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 		output["NS"] = listVal
 
 	case reflect.Slice:
-		if v.Type().Elem().Kind() == reflect.Uint8 {
+		if v.Type().Elem().Kind() == reflect.Slice {
 			binarySet := [][]byte{}
 			for i := 0; i < v.Len(); i++ {
 				elem := v.Index(i)
