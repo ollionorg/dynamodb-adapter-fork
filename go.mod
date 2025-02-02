@@ -90,7 +90,6 @@ require (
 )
 
 require (
-	github.com/datastax/go-cassandra-native-protocol v0.0.0-20240903140133-605a850e203b
 	github.com/google/uuid v1.6.0
 	go.opentelemetry.io/contrib/detectors/gcp v1.33.0
 	go.opentelemetry.io/otel v1.33.0

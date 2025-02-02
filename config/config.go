@@ -87,6 +87,5 @@ func GetTableConf(tableName string) (models.TableConfig, error) {
 		tableConf.ActualTable = actualTable
 		return tableConf, nil
 	}
-	fmt.Println(models.GlobalConfig, tableName)
 	return models.TableConfig{}, errors.New("ResourceNotFoundException", tableName)
 }

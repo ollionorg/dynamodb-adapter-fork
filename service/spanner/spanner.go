@@ -16,7 +16,6 @@ package spanner
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
@@ -36,7 +35,6 @@ func ParseDDL(updateDB bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("ms", ms)
 	if models.DbConfigMap == nil {
 		models.DbConfigMap = make(map[string]models.TableConfig)
 	}
