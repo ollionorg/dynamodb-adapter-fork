@@ -32,10 +32,6 @@ import (
 
 var readFile = os.ReadFile
 
-const (
-	expectedRowCount = 18
-)
-
 var (
 	colNameRg     = regexp.MustCompile("^[a-zA-Z0-9_]*$")
 	chars         = []string{"]", "^", "\\\\", "/", "[", ".", "(", ")", "-"}
@@ -44,7 +40,7 @@ var (
 )
 
 func main() {
-	config, err := loadConfig("../config.yaml")
+	config, err := loadConfig("config.yaml")
 	if err != nil {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
