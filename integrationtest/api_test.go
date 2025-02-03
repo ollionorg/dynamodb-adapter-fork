@@ -1367,7 +1367,7 @@ func createStatusCheckPostTestCase(name, url, dynamoAction string, httpStatus in
 func init() {
 	config, err := LoadConfig("../config.yaml")
 	if err != nil {
-		log.Fatalf("IT Error loading configuration: %v", err)
+		log.Fatalf("Error loading configuration: %v", err)
 	}
 	// Build the Spanner database name
 	databaseName = fmt.Sprintf(
