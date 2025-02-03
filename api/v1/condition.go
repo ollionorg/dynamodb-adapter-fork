@@ -805,10 +805,8 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 		output["B"] = append([]byte{}, b...)
 	case reflect.String:
 		listVal := []string{}
-		count := 0
 		for i := 0; i < v.Len(); i++ {
 			listVal = append(listVal, v.Index(i).String())
-			count++
 		}
 		output["SS"] = listVal
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
@@ -829,12 +827,13 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 				}
 			}
 			output["BS"] = binarySet
+		} else {
+			return fmt.Errorf("type of slice not supported: %s", v.Type().Elem().Kind().String())
 		}
 
 	default:
 		listVal := make([]map[string]interface{}, 0, v.Len())
 
-		count := 0
 		for i := 0; i < v.Len(); i++ {
 			elem := make(map[string]interface{})
 			err := convertMapToDynamoObject(elem, v.Index(i))
@@ -842,7 +841,6 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 				return err
 			}
 			listVal = append(listVal, elem)
-			count++
 		}
 		output["L"] = listVal
 	}

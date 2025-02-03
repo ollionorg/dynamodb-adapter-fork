@@ -814,6 +814,7 @@ func parseBytesColumn(r *spanner.Row, idx int, col string, row map[string]interf
 	if len(s) > 0 {
 		var m interface{}
 		if err := json.Unmarshal(s, &m); err != nil {
+			// Instead of an error while unmarshalling fall back to the raw string.
 			row[col] = string(s)
 			return nil
 		}
