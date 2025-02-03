@@ -156,62 +156,60 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 			expr.AddValues[v[0]] = addValue
 		}
 
-		// **Detect Set Data Type and Append Values**
+		key := v[0]
 		if updateAtrr.ExpressionAttributeNames[v[0]] != "" {
-			tmp, ok := updateAtrr.ExpressionAttributeMap[v[1]]
-			if ok {
-				switch existingValue := tmp.(type) {
-				case []string: // String Set
-					if strSlice, ok := oldRes[v[0]].([]string); ok {
-						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
-							resp[v[0]] = append(strSlice, existingValue...)
-						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
-							resp[v[0]] = removeFromSlice(strSlice, existingValue)
-						}
+			key = updateAtrr.ExpressionAttributeNames[v[0]]
+		}
 
-					} else {
-						resp[v[0]] = tmp
-					}
-				case []float64: // Number Set
-					if floatSlice, ok := oldRes[v[0]].([]float64); ok {
-						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
-							resp[v[0]] = append(floatSlice, existingValue...)
-						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
-							resp[v[0]] = removeFromSlice(floatSlice, existingValue)
-						}
-					} else {
-						resp[v[0]] = tmp
-					}
-
-				case [][]byte: // Binary Set
-					if byteSlice, ok := oldRes[v[0]].([][]byte); ok {
-						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
-							resp[v[0]] = append(byteSlice, existingValue...)
-						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
-							resp[v[0]] = removeFromByteSlice(byteSlice, existingValue)
-						}
-					} else {
-						resp[v[0]] = tmp
+		if strings.Contains(v[1], "%") {
+			for j := 0; j < len(expr.Field); j++ {
+				if strings.Contains(v[1], "%"+expr.Value[j]+"%") {
+					tmp, ok := updateAtrr.ExpressionAttributeMap[expr.Value[j]]
+					if ok {
+						resp[key] = tmp
 					}
 				}
 			}
 		} else {
-			if strings.Contains(v[1], "%") {
-				for j := 0; j < len(expr.Field); j++ {
-					if strings.Contains(v[1], "%"+expr.Value[j]+"%") {
-						tmp, ok := updateAtrr.ExpressionAttributeMap[expr.Value[j]]
-						if ok {
-							resp[v[0]] = tmp
+			tmp, ok := updateAtrr.ExpressionAttributeMap[v[1]]
+			if ok {
+				switch newValue := tmp.(type) {
+				case []string: // String Set
+					if strSlice, ok := oldRes[key].([]string); ok {
+						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
+							resp[key] = append(strSlice, newValue...)
+						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
+							resp[key] = removeFromSlice(strSlice, newValue)
 						}
+					} else {
+						resp[key] = tmp
 					}
-				}
-			} else {
-				tmp, ok := updateAtrr.ExpressionAttributeMap[v[1]]
-				if ok {
-					resp[v[0]] = tmp
+				case []float64: // Number Set
+					if floatSlice, ok := oldRes[key].([]float64); ok {
+						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
+							resp[key] = append(floatSlice, newValue...)
+						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
+							resp[key] = removeFromSlice(floatSlice, newValue)
+						}
+					} else {
+						resp[key] = tmp
+					}
+				case [][]byte: // Binary Set
+					if byteSlice, ok := oldRes[key].([][]byte); ok {
+						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
+							resp[key] = append(byteSlice, newValue...)
+						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
+							resp[key] = removeFromByteSlice(byteSlice, newValue)
+						}
+					} else {
+						resp[key] = tmp
+					}
+				default:
+					resp[key] = tmp
 				}
 			}
 		}
+
 	}
 
 	// Merge primaryKeyMap and updateAttributes
