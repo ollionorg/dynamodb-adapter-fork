@@ -15,6 +15,6 @@
 				"sortKey": "sort key for indexName1",
 				"partitionKey": "partition key for indexName1"
 			}
-        }
+		}
     }
 }

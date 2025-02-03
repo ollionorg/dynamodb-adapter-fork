@@ -35,7 +35,9 @@ func ParseDDL(updateDB bool) error {
 	if err != nil {
 		return err
 	}
-
+	if models.DbConfigMap == nil {
+		models.DbConfigMap = make(map[string]models.TableConfig)
+	}
 	if len(ms) > 0 {
 		for i := 0; i < len(ms); i++ {
 			tableName := ms[i]["tableName"].(string)
@@ -56,6 +58,18 @@ func ParseDDL(updateDB bool) error {
 				models.TableDDL[tableName] = make(map[string]string)
 				models.TableColumnMap[tableName] = []string{}
 			}
+			// Add table info to DbConfigMap (example structure for TableConfig)
+			if _, exists := models.DbConfigMap[tableName]; !exists {
+				// Initialize TableConfig if it doesn't exist
+				models.DbConfigMap[tableName] = models.TableConfig{
+					ActualTable:      tableName,
+					PartitionKey:     "contact_ranking_list",
+					SpannerIndexName: "contact_ranking_list",
+				}
+			}
+			// Add column and data type to the TableConfig
+			// models.DbConfigMap[tableName].Columns = append(models.DbConfigMap[tableName].Columns, column)
+			// models.DbConfigMap[tableName].DataTypes[column] = dataType
 			models.TableColumnMap[tableName] = append(models.TableColumnMap[tableName], column)
 			models.TableDDL[tableName][column] = dataType
 		}
