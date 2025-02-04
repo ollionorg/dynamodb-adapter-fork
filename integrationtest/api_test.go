@@ -1364,18 +1364,6 @@ func createStatusCheckPostTestCase(name, url, dynamoAction string, httpStatus in
 	}
 }
 
-func init() {
-	config, err := LoadConfig("../config.yaml")
-	if err != nil {
-		log.Fatalf("Error loading configuration: %v", err)
-	}
-	// Build the Spanner database name
-	databaseName = fmt.Sprintf(
-		"projects/%s/instances/%s/databases/%s",
-		config.Spanner.ProjectID, config.Spanner.InstanceID, config.Spanner.DatabaseName,
-	)
-}
-
 func LoadConfig(filename string) (*models.Config, error) {
 	data, err := readConfigFile(filename)
 	if err != nil {
