@@ -33,6 +33,13 @@ import (
 type Storage struct {
 	spannerClient map[string]*spanner.Client
 }
+type storageSpanner interface {
+	GetSpannerClient() (*spanner.Client, error)
+}
+
+func (s *Storage) GetSpannerClient() (*spanner.Client, error) {
+	return s.getSpannerClient(config.ConfigurationMap.GoogleProjectID), nil
+}
 
 // storage - global instance of storage
 var storage *Storage
@@ -81,7 +88,6 @@ func GetStorageInstance() *Storage {
 			InitializeDriver()
 		}
 	})
-
 	return storage
 }
 

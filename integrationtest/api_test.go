@@ -471,7 +471,7 @@ var (
 	queryTestCaseOutput16 = `{"Count":1,"Items":[]}`
 )
 
-//Test Data for Scan API
+// Test Data for Scan API
 var (
 	ScanTestCase1Name = "1: Wrong URL"
 	ScanTestCase1     = models.ScanMeta{
@@ -589,7 +589,7 @@ var (
 	ScanTestCase13Output = `{"Count":5,"Items":[]}`
 )
 
-//Test Data for UpdateItem API
+// Test Data for UpdateItem API
 var (
 
 	//200 Status check
@@ -728,7 +728,7 @@ var (
 	}
 )
 
-//Test Data for PutItem API
+// Test Data for PutItem API
 var (
 	//400 bad request
 	PutItemTestCase1Name = "1: only tablename passed"
@@ -839,7 +839,7 @@ var (
 	}
 )
 
-//Test Data DeleteItem API
+// Test Data DeleteItem API
 var (
 	DeleteItemTestCase1Name = "1: Only TableName passed"
 	DeleteItemTestCase1     = models.Delete{
@@ -926,7 +926,7 @@ var (
 	}
 )
 
-//test Data for BatchWriteItem API
+// test Data for BatchWriteItem API
 var (
 	BatchWriteItemTestCase1Name = "1: Only Table name passed"
 	BatchWriteItemTestCase1     = models.BatchWriteItem{
@@ -1304,6 +1304,156 @@ var (
 			},
 		},
 	}
+)
+
+var (
+	TestTransactGet1Name = "1: wrong url"
+	TestTransactGet1     = models.TransactGetItemsRequest{
+		TransactItems: []models.TransactGetItem{
+			{Get: models.GetItemRequest{
+				TableName: "your_table_name", // add the actual table name here
+				Keys: map[string]*dynamodb.AttributeValue{
+					"emp_id": {N: aws.String("1")},
+				},
+			}},
+		},
+	}
+
+	TestTransactGet2Name = "2: valid request with one item"
+	TestTransactGet2     = models.TransactGetItemsRequest{
+		TransactItems: []models.TransactGetItem{
+			{Get: models.GetItemRequest{
+				TableName: "employee", // add the actual table name here
+				Keys: map[string]*dynamodb.AttributeValue{
+					"emp_id": {N: aws.String("1")},
+				},
+			}},
+		},
+	}
+	TestTransactGet2Output = `{
+		"Responses": [
+			{
+				"TableName": "employee", // add the actual table name here
+				"Item": {
+					"emp_id": {"N":"1"},
+					"first_name": {"S":"Marc"},
+					"last_name": {"S":"Richards"}
+				}
+			}
+		]
+	}`
+
+	TestTransactGet3Name = "3: valid request with multiple items"
+	TestTransactGet3     = models.TransactGetItemsRequest{
+		TransactItems: []models.TransactGetItem{
+			{Get: models.GetItemRequest{
+				TableName: "employee", // add the actual table name here
+				Keys: map[string]*dynamodb.AttributeValue{
+					"emp_id": {N: aws.String("1")},
+				},
+			}},
+			{Get: models.GetItemRequest{
+				TableName: "department", // add the actual table name here
+				Keys: map[string]*dynamodb.AttributeValue{
+					"d_id": {N: aws.String("200")},
+				},
+			}},
+		},
+	}
+	TestTransactGet3Output = `{
+		"Responses": [
+			{
+				"TableName": "employee", // add the actual table name here
+				"Item": {
+					"emp_id": {"N":"1"},
+					"first_name": {"S":"Marc"},
+					"last_name": {"S":"Richards"}
+				}
+			},
+			{
+				"TableName": "your_table_name", // add the actual table name here
+				"Item": {
+					"d_id": {"N":"200"},
+					"d_name": {"S":"Arts"},
+					"d_specialization": {"S":"BA"}
+				}
+			}
+		]
+	}`
+
+	TestTransactGet4Name = "4: valid request with ProjectionExpression"
+	TestTransactGet4     = models.TransactGetItemsRequest{
+		TransactItems: []models.TransactGetItem{
+			{Get: models.GetItemRequest{
+				TableName: "employee", // add the actual table name here
+				Keys: map[string]*dynamodb.AttributeValue{
+					"emp_id": {N: aws.String("1")},
+				},
+				ProjectionExpression: "first_name, last_name",
+				ExpressionAttributeNames: map[string]string{
+					"#fn": "first_name",
+					"#ln": "last_name",
+				},
+			}},
+		},
+	}
+	TestTransactGet4Output = `{
+		"Responses": [
+			{
+				"TableName": "employee", // add the actual table name here
+				"Item": {
+					"first_name": {"S":"Marc"},
+					"last_name": {"S":"Richards"}
+				}
+			}
+		]
+	}`
+
+	TestTransactGet5Name = "5: valid request with ProjectionExpression and multiple items"
+	TestTransactGet5     = models.TransactGetItemsRequest{
+		TransactItems: []models.TransactGetItem{
+			{Get: models.GetItemRequest{
+				TableName: "employee", // add the actual table name here
+				Keys: map[string]*dynamodb.AttributeValue{
+					"emp_id": {N: aws.String("1")},
+				},
+				ProjectionExpression: "first_name, last_name",
+				ExpressionAttributeNames: map[string]string{
+					"#fn": "first_name",
+					"#ln": "last_name",
+				},
+			}},
+			{Get: models.GetItemRequest{
+				TableName: "department", // add the actual table name here
+				Keys: map[string]*dynamodb.AttributeValue{
+					"d_id": {N: aws.String("200")},
+				},
+				ProjectionExpression: "d_name, d_specialization",
+				ExpressionAttributeNames: map[string]string{
+					"#dn": "d_name",
+					"#ds": "d_specialization",
+				},
+			}},
+		},
+	}
+	TestTransactGet5Output = `{
+		"Responses": [
+			{
+				"TableName": "employee", // add the actual table name here
+				"Item": {
+					"first_name": {"S":"Marc"},
+					"last_name": {"S":"Richards"}
+				}
+			},
+			{
+				"TableName": "department", // add the actual table name here
+				"Item": {
+					"d_name": {"S":"Arts"},
+					"d_specialization": {"S":"BA"}
+				}
+			}
+		]
+	}`
 )
 
 func handlerInitFunc() *gin.Engine {
@@ -1738,6 +1888,36 @@ func testBatchWriteItemAPI(t *testing.T) {
 	apitest.RunTests(t, tests)
 }
 
+func testTransactGetAPI(t *testing.T) {
+	apitest := apitesting.APITest{
+		GetHTTPHandler: func(ctx context.Context, t *testing.T) http.Handler {
+			return handlerInitFunc()
+		},
+	}
+	tests := []apitesting.APITestCase{
+		{
+			Name:    TestTransactGet1Name,
+			ReqType: "POST",
+			PopulateHeaders: func(ctx context.Context, t *testing.T) map[string]string {
+				return map[string]string{
+					"Content-Type": "application/json",
+					"X-Amz-Target": "DynamoDB_20120810.TransactGetItems",
+				}
+			},
+			ResourcePath: func(ctx context.Context, t *testing.T) string { return "/v1/WrongPath" },
+			PopulateJSON: func(ctx context.Context, t *testing.T) interface{} {
+				return TestTransactGet1
+			},
+			ExpHTTPStatus: http.StatusNotFound,
+		},
+		createPostTestCase(TestTransactGet2Name, "/v1", "TransactGetItems", TestTransactGet2Output, TestTransactGet2),
+		createPostTestCase(TestTransactGet3Name, "/v1", "TransactGetItems", TestTransactGet3Output, TestTransactGet3),
+		createPostTestCase(TestTransactGet4Name, "/v1", "TransactGetItems", TestTransactGet4Output, TestTransactGet4),
+		createPostTestCase(TestTransactGet5Name, "/v1", "TransactGetItems", TestTransactGet5Output, TestTransactGet5),
+	}
+	apitest.RunTests(t, tests)
+}
+
 func TestApi(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration tests in short mode")
@@ -1753,6 +1933,7 @@ func TestApi(t *testing.T) {
 		"PutItemAPI",
 		"DeleteItemAPI",
 		"BatchWriteItemAPI",
+		"TransactGetItems",
 	}
 
 	var tests = map[string]func(t *testing.T){
@@ -1764,6 +1945,7 @@ func TestApi(t *testing.T) {
 		"PutItemAPI":        testPutItemAPI,
 		"DeleteItemAPI":     testDeleteItemAPI,
 		"BatchWriteItemAPI": testBatchWriteItemAPI,
+		"TransactGetItems":  testTransactGetAPI,
 	}
 
 	// run the tests
