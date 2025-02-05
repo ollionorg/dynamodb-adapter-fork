@@ -34,7 +34,6 @@ type Storage struct {
 	spannerClient map[string]*spanner.Client
 }
 type storageSpanner interface {
-	// ... other methods ...
 	GetSpannerClient() (*spanner.Client, error)
 }
 

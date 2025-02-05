@@ -751,18 +751,3 @@ func convertNumber(output map[string]interface{}, v reflect.Value) error {
 	output["N"] = outVal
 	return nil
 }
-
-// resolveExpressionAttributeNames replaces ExpressionAttributeNames in ProjectionExpression
-func resolveExpressionAttributeNames(projection string, attrNames map[string]string) string {
-	if projection == "" {
-		return ""
-	}
-
-	tokens := strings.Split(projection, ", ")
-	for i, token := range tokens {
-		if resolvedName, exists := attrNames[token]; exists {
-			tokens[i] = resolvedName
-		}
-	}
-	return strings.Join(tokens, ", ")
-}
