@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"math"
 	"reflect"
 	"regexp"
@@ -182,7 +181,6 @@ func (s Storage) SpannerDelete(ctx context.Context, table string, m map[string]i
 	_, err := s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
 		for k, v := range m {
-			fmt.Printf("<----%s---->", k)
 			tmpMap[k] = v
 		}
 		if len(eval.Attributes) > 0 || expr != nil {
@@ -198,12 +196,8 @@ func (s Storage) SpannerDelete(ctx context.Context, table string, m map[string]i
 		if err != nil {
 			return err
 		}
-		fmt.Println("tableConf--->", tableConf)
-		fmt.Println("tmpMap--->", tmpMap)
 		table = utils.ChangeTableNameForSpanner(table)
-
 		pKey := tableConf.PartitionKey
-		fmt.Println("pKey--->", pKey)
 		pValue, ok := tmpMap[pKey]
 		if !ok {
 			return errors.New("ResourceNotFoundException", pKey)

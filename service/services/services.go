@@ -33,6 +33,7 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/storage"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/transalter"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
@@ -266,9 +267,6 @@ func QueryAttributes(ctx context.Context, query models.Query) (map[string]interf
 		return nil, hash, err
 	}
 	logger.LogDebug(stmt)
-	fmt.Println("stmt-->", stmt)
-	fmt.Println("cols->", cols)
-	fmt.Println("sCountQuery ->", isCountQuery)
 	resp, err := storage.GetStorageInstance().ExecuteSpannerQuery(ctx, query.TableName, cols, isCountQuery, stmt)
 	if err != nil {
 		return nil, hash, err
@@ -509,10 +507,6 @@ func Delete(ctx context.Context, tableName string, primaryKeyMap map[string]inte
 	if err != nil {
 		return err
 	}
-	fmt.Println("condExpression-->", condExpression)
-	fmt.Println("expr-->", expr)
-	a, _ := json.Marshal(e)
-	fmt.Println("e-->", string(a))
 	return storage.GetStorageInstance().SpannerDelete(ctx, tableName, primaryKeyMap, e, expr)
 }
 
@@ -625,7 +619,7 @@ func ExecuteStatement(ctx context.Context, executeStatement models.ExecuteStatem
 
 }
 
-func parsePartQlToSpannerforSelect(ctx context.Context, executeStatement models.ExecuteStatement) (spanner.Statement, error) {
+func parsePartiQlToSpannerforSelect(ctx context.Context, executeStatement models.ExecuteStatement) (spanner.Statement, error) {
 	stmt := spanner.Statement{}
 	var err error
 	if strings.Contains(executeStatement.Statement, "WHERE") {
@@ -659,6 +653,8 @@ func convertParamterisedQuery(executeStatement models.ExecuteStatement) (string,
 
 	}
 	configs, err := config.GetTableConf(executeStatement.TableName)
+	a, _ := json.Marshal(configs)
+	fmt.Println("tableConf-->", string(a))
 	if err != nil {
 		return "", err
 	}
@@ -704,6 +700,8 @@ func parsePartQlToSpannerInsert(ctx context.Context, executeStatement models.Exe
 
 		}
 		configs, err := config.GetTableConf(executeStatement.TableName)
+		a, _ := json.Marshal(configs)
+		logger.LogInfo("tableConf-->", string(a))
 		if err != nil {
 			return nil, err
 		}
@@ -839,7 +837,6 @@ func parsePartQlToSpannerDelete(ctx context.Context, executeStatement models.Exe
 }
 
 func convertType(pkeyMap map[string]interface{}, colDLL map[string]string) (map[string]interface{}, error) {
-	fmt.Println("pkeyMap--->", pkeyMap)
 	for k, val := range pkeyMap {
 		v, ok := colDLL[k]
 		if !ok {
@@ -899,8 +896,8 @@ func contains(slice []string, item string) bool {
 	}
 	return false
 }
+
 func convertTypeValueAttribute(m map[string]*dynamodb.AttributeValue, attrMap map[string]string, queryType string) (map[string]interface{}, error) {
-	fmt.Println("m-->", m)
 	newMap := make(map[string]interface{})
 	for k, val := range m {
 		v, ok := attrMap[k]
@@ -933,18 +930,20 @@ func convertTypeValueAttribute(m map[string]*dynamodb.AttributeValue, attrMap ma
 	return newMap, nil
 }
 func ExecuteStatementForSelect(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
-	res, err := parsePartQlToSpannerforSelect(ctx, executeStatement)
+	res, err := parsePartiQlToSpannerforSelect(ctx, executeStatement)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(res)
+	_, err = transalter.PocSelectQuery(executeStatement.Statement)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := storage.GetStorageInstance().ExecuteSpannerQuery(ctx, executeStatement.TableName, []string{}, false, res)
 	if err != nil {
 		return nil, err
 	}
 	finalResp := make(map[string]interface{})
 	finalResp["Items"] = resp
-	fmt.Println(finalResp)
 	return finalResp, nil
 }
 

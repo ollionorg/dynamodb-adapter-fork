@@ -149,8 +149,6 @@ func put(ctx context.Context, tableName string, putObj map[string]interface{}, e
 	pKey := tableConf.PartitionKey
 	var oldResp map[string]interface{}
 
-	fmt.Println("putObj-->", putObj)
-
 	oldResp, err = storage.GetStorageInstance().SpannerGet(ctx, tableName, putObj[pKey], putObj[sKey], nil)
 	if err != nil {
 		return nil, err

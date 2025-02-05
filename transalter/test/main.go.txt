@@ -1,0 +1,96 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/transalter/parser"
+)
+
+// Custom Listener to extract SELECT query components
+type SelectQueryListener struct {
+	*parser.BasePartiQLParserListener
+	Columns []string
+	Tables  []string
+	Where   []Condition
+	OrderBy []string
+	Limit   string
+	Offset  string
+}
+
+type Condition struct {
+	Column   string
+	Operator string
+	Value    string
+}
+
+func (l *SelectQueryListener) EnterSelectClause(ctx *parser.SelectClauseContext) {
+	fmt.Println("Parsing SELECT clause:", ctx.GetText())
+}
+
+func (l *SelectQueryListener) EnterProjectionItems(ctx *parser.ProjectionItemsContext) {
+	for _, proj := range ctx.AllProjectionItem() {
+		l.Columns = append(l.Columns, proj.GetText())
+	}
+}
+
+func (l *SelectQueryListener) EnterFromClause(ctx *parser.FromClauseContext) {
+
+	l.Tables = append(l.Tables, ctx.TableReference().GetText())
+
+}
+
+// func (l *SelectQueryListener) EnterWhereClauseSelect(ctx *parser.WhereClauseSelectContext) {
+// 	l.Where = ctx.GetText()
+// }
+
+func (l *SelectQueryListener) EnterOrderByClause(ctx *parser.OrderByClauseContext) {
+	for _, orderSpec := range ctx.AllOrderSortSpec() {
+		l.OrderBy = append(l.OrderBy, orderSpec.GetText())
+	}
+}
+
+func (l *SelectQueryListener) EnterLimitClause(ctx *parser.LimitClauseContext) {
+	l.Limit = ctx.GetText()
+}
+
+func (l *SelectQueryListener) EnterOffsetByClause(ctx *parser.OffsetByClauseContext) {
+	l.Offset = ctx.GetText()
+}
+
+// Extracts WHERE conditions
+func (l *SelectQueryListener) EnterPredicateComparison(ctx *parser.PredicateComparisonContext) {
+	column := ctx.GetLhs().GetText()  // Extract column name
+	operator := ctx.GetOp().GetText() // Extract comparison operator
+	value := ctx.GetRhs().GetText()   // Extract value
+
+	l.Where = append(l.Where, Condition{
+		Column:   column,
+		Operator: operator,
+		Value:    value,
+	})
+}
+
+func main() {
+	// Example PartiQL SELECT query
+	query := "SELECT name, age FROM users WHERE age > 30 ORDER BY age DESC LIMIT 10 OFFSET 5;"
+
+	// Create a lexer and parser
+	lexer := parser.NewPartiQLLexer(antlr.NewInputStream(query))
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	p := parser.NewPartiQLParser(stream)
+
+	// Create and attach the custom listener
+	listener := &SelectQueryListener{}
+	antlr.ParseTreeWalkerDefault.Walk(listener, p.Root())
+
+	// Print parsed components
+	fmt.Println("Extracted Query Components:")
+	fmt.Println("Columns:", strings.Join(listener.Columns, ", "))
+	fmt.Println("Tables:", strings.Join(listener.Tables, ", "))
+	fmt.Println("WHERE Clause:", listener.Where[0].Column, listener.Where[0].Operator, listener.Where[0].Value)
+	fmt.Println("ORDER BY:", strings.Join(listener.OrderBy, ", "))
+	fmt.Println("LIMIT:", listener.Limit)
+	fmt.Println("OFFSET:", listener.Offset)
+}

@@ -1,0 +1,134 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/transalter/parser"
+)
+
+// Structure to store UPDATE statement details
+type UpdateStatement struct {
+	Table      string
+	SetClauses []SetClause
+	Where      []Condition
+	Returning  []string
+}
+
+// Structure to store column, operator, and value for SET clause
+type SetClause struct {
+	Column   string
+	Operator string
+	Value    string
+}
+
+// Structure to store column, operator, and value for WHERE clause
+type Condition struct {
+	Column   string
+	Operator string
+	Value    string
+}
+
+// Custom Listener to extract UPDATE query components
+type UpdateQueryListener struct {
+	*parser.BasePartiQLParserListener
+	UpdateData UpdateStatement
+}
+
+func (l *UpdateQueryListener) EnterUpdateClause(ctx *parser.UpdateClauseContext) {
+	// Extract the table being updated
+	l.UpdateData.Table = ctx.TableBaseReference().GetText()
+}
+
+func (l *UpdateQueryListener) EnterSetCommand(ctx *parser.SetCommandContext) {
+	// Extract column, operator, and value from SET clause
+	for _, setAssign := range ctx.AllSetAssignment() {
+		column := setAssign.PathSimple().GetText()
+		value := setAssign.Expr().GetText()
+		operator := "=" // Default operator
+
+		// Check for arithmetic expressions (e.g., salary = salary + 5000)
+		if binExpr, ok := setAssign.Expr().GetChild(1).(antlr.Tree); ok {
+			if opNode, ok := binExpr.GetChild(0).(antlr.TerminalNode); ok {
+				operator = opNode.GetText() // Extracts '+', '-', '*', '/'
+				value = setAssign.Expr().GetChild(2).GetText()
+			}
+		}
+
+		l.UpdateData.SetClauses = append(l.UpdateData.SetClauses, SetClause{
+			Column:   column,
+			Operator: operator,
+			Value:    value,
+		})
+	}
+}
+
+func (l *UpdateQueryListener) EnterWhereClause(ctx *parser.PredicateComparisonContext) {
+	column := ctx.GetLhs().GetText()  // Extract column name
+	operator := ctx.GetOp().GetText() // Extract comparison operator
+	value := ctx.GetRhs().GetText()   // Extract value
+
+	l.UpdateData.Where = append(l.UpdateData.Where, Condition{
+		Column:   column,
+		Operator: operator,
+		Value:    value,
+	})
+}
+
+// // Recursively extract conditions from WHERE clause (supports AND/OR)
+// func (l *UpdateQueryListener) extractConditions(expr parser.IExprContext, logicalOp string) {
+// 	if comparison, ok := expr.(*parser.PredicateComparisonContext); ok {
+// 		// Handle simple comparison (e.g., emp_id = 10)
+// 		l.UpdateData.Where = append(l.UpdateData.Where, Condition{
+// 			Column:   comparison.GetLhs().GetText(),
+// 			Operator: comparison.GetOp().GetText(),
+// 			Value:    comparison.GetRhs().GetText(),
+// 		})
+// 	} else if logical, ok := expr.(*parser.ExprOrContext); ok {
+// 		// Handle logical conditions (AND/OR)
+// 		l.extractConditions(logical.GetLhs(), "OR")
+// 		l.extractConditions(logical.GetRhs(), "OR")
+// 	} else if logical, ok := expr.(*parser.ExprAndContext); ok {
+// 		// Handle logical conditions (AND)
+// 		l.extractConditions(logical.GetLhs(), "AND")
+// 		l.extractConditions(logical.GetRhs(), "AND")
+// 	}
+// }
+
+func (l *UpdateQueryListener) EnterReturningClause(ctx *parser.ReturningClauseContext) {
+	// Extract RETURNING columns
+	for _, col := range ctx.AllReturningColumn() {
+		l.UpdateData.Returning = append(l.UpdateData.Returning, col.GetText())
+	}
+}
+
+func main() {
+	// Example PartiQL UPDATE query
+	query := "UPDATE employees SET salary = salary + 5000, age = age * 2 WHERE emp_id = 10 AND department = 'HR' OR status = 'active' RETURNING *;"
+
+	// Create lexer and parser
+	lexer := parser.NewPartiQLLexer(antlr.NewInputStream(query))
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+	p := parser.NewPartiQLParser(stream)
+
+	// Create and attach the custom listener
+	listener := &UpdateQueryListener{}
+	antlr.ParseTreeWalkerDefault.Walk(listener, p.Root())
+
+	// Print extracted components
+	fmt.Println("\nExtracted UPDATE Query Components:")
+	fmt.Println("Table:", listener.UpdateData.Table)
+
+	fmt.Println("SET Clauses:")
+	for _, set := range listener.UpdateData.SetClauses {
+		fmt.Printf(" - Column: %s, Operator: %s, Value: %s\n", set.Column, set.Operator, set.Value)
+	}
+
+	fmt.Println("WHERE Conditions:")
+	for _, cond := range listener.UpdateData.Where {
+		fmt.Printf(" - Column: %s, Operator: %s, Value: %s\n", cond.Column, cond.Operator, cond.Value)
+	}
+
+	fmt.Println("RETURNING Columns:", strings.Join(listener.UpdateData.Returning, ", "))
+}

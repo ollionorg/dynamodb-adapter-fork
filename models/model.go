@@ -281,12 +281,12 @@ type StreamDataModel struct {
 
 // ScanMeta for Scan request
 type ExecuteStatement struct {
-	Limit                               int64                      `json:"Limit"`
-	NextToken                           int64                      `json:"NextToken"`
-	Parameters                          []*dynamodb.AttributeValue `json:"Parameters"`
-	ReturnValuesOnConditionCheckFailure string                     `json:"ReturnValuesOnConditionCheckFailure"`
-	Statement                           string                     `json:"Statement"`
-	TableName                           string                     `json:"TableName"`
+	Limit        int64                      `json:"Limit"`
+	NextToken    int64                      `json:"NextToken"`
+	Parameters   []*dynamodb.AttributeValue `json:"Parameters"`
+	ReturnValues string                     `json:"ReturnValues"`
+	Statement    string                     `json:"Statement"`
+	TableName    string                     `json:"TableName"`
 }
 
 type ExecuteStatementQuery struct {

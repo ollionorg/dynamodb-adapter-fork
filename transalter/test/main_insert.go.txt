@@ -1,0 +1,113 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/transalter/parser"
+)
+
+// Structure to store INSERT statement details
+type InsertStatement struct {
+	Table      string
+	Columns    []string
+	Values     []string
+	OnConflict string
+}
+
+// Custom Listener to extract INSERT query components
+type InsertQueryListener struct {
+	*parser.BasePartiQLParserListener
+	InsertData InsertStatement
+}
+
+func (l *InsertQueryListener) EnterInsertStatement(ctx *parser.InsertStatementContext) {
+	// Extract table name for standard INSERT
+	l.InsertData.Table = ctx.SymbolPrimitive().GetText()
+}
+
+func (l *InsertQueryListener) EnterInsertCommandReturning(ctx *parser.InsertCommandReturningContext) {
+	// Extract table name for alternative INSERT syntax
+	l.InsertData.Table = ctx.PathSimple().GetText()
+}
+
+func (l *InsertQueryListener) EnterInsertStatementLegacy(ctx *parser.InsertStatementLegacyContext) {
+	// Extract table name for legacy INSERT syntax
+	l.InsertData.Table = ctx.PathSimple().GetText()
+}
+
+func (l *InsertQueryListener) EnterProjectionItems(ctx *parser.ProjectionItemsContext) {
+	// Extract column names (for standard INSERT INTO ... VALUES)
+	for _, proj := range ctx.AllProjectionItem() {
+		l.InsertData.Columns = append(l.InsertData.Columns, proj.GetText())
+	}
+}
+
+func (l *InsertQueryListener) EnterValueList(ctx *parser.ValueListContext) {
+	// Extract values from standard INSERT INTO ... VALUES (...)
+	for _, expr := range ctx.AllCOMMA() {
+		l.InsertData.Columns = append(l.InsertData.Columns, expr.GetText())
+	}
+	for _, expr := range ctx.AllExpr() {
+		l.InsertData.Values = append(l.InsertData.Values, expr.GetText())
+	}
+}
+
+func (l *InsertQueryListener) EnterValueExpr(ctx *parser.ValueExprContext) {
+	// Handle JSON-style key-value pairs for INSERT INTO ... VALUE { ... }
+	jsonText := ctx.GetText()
+	if strings.HasPrefix(jsonText, "{") {
+		l.parseJsonObject(jsonText)
+	}
+}
+
+func (l *InsertQueryListener) parseJsonObject(jsonString string) {
+	// Remove { and } and split by commas to extract key-value pairs
+	jsonString = strings.Trim(jsonString, "{}")
+	pairs := strings.Split(jsonString, ",")
+
+	for _, pair := range pairs {
+		parts := strings.Split(pair, ":")
+		if len(parts) == 2 {
+			column := strings.TrimSpace(strings.Trim(parts[0], "'"))
+			value := strings.TrimSpace(parts[1])
+
+			l.InsertData.Columns = append(l.InsertData.Columns, column)
+			l.InsertData.Values = append(l.InsertData.Values, value)
+		}
+	}
+}
+
+func (l *InsertQueryListener) EnterOnConflict(ctx *parser.OnConflictContext) {
+	// Capture ON CONFLICT clause
+	l.InsertData.OnConflict = ctx.GetText()
+}
+
+func main() {
+	// Example PartiQL INSERT queries (both types)
+	queries := []string{
+		"INSERT INTO users (id, name, age) VALUES (1, 'John', 30) ON CONFLICT DO NOTHING;",
+		"INSERT INTO employee VALUE {'emp_id': 10, 'first_name': 'Marc', 'last_name': 'Richards1', 'age': 10, 'address': 'Shamli'};",
+	}
+
+	for _, query := range queries {
+		fmt.Println("\nParsing Query:", query)
+
+		// Create lexer and parser
+		lexer := parser.NewPartiQLLexer(antlr.NewInputStream(query))
+		stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+		p := parser.NewPartiQLParser(stream)
+
+		// Create and attach the custom listener
+		listener := &InsertQueryListener{}
+		antlr.ParseTreeWalkerDefault.Walk(listener, p.Root())
+
+		// Print extracted components
+		fmt.Println("\nExtracted INSERT Query Components:")
+		fmt.Println("Table:", listener.InsertData.Table)
+		fmt.Println("Columns:", strings.Join(listener.InsertData.Columns, ", "))
+		fmt.Println("Values:", strings.Join(listener.InsertData.Values, ", "))
+		fmt.Println("ON CONFLICT:", listener.InsertData.OnConflict)
+	}
+}
