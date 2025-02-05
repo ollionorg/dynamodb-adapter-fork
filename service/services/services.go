@@ -18,10 +18,10 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"hash/fnv"
 	"strconv"
 	"strings"
+	"sync"
 
 	"cloud.google.com/go/spanner"
 	"github.com/ahmetb/go-linq"
@@ -32,6 +32,47 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/storage"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
+
+type Storage interface {
+	SpannerTransactGetItems(ctx context.Context, tableName string, pValues, sValues []interface{}, projectionCols []string) ([]map[string]interface{}, error)
+}
+type Service interface {
+	MayIReadOrWrite(tableName string, isWrite bool, user string) bool
+	TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, keyMapArraymap []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string, st Storage) ([]map[string]interface{}, error)
+}
+
+type spannerService struct { // Define a concrete type for your service
+	spannerClient *spanner.Client // Example: Your Spanner client
+	st            Storage
+}
+
+var service Service // Service interface variable
+
+var once sync.Once
+
+// SetServiceInstance sets the service instance (for dependency injection)
+func SetServiceInstance(s Service) {
+	service = s
+}
+
+func GetServiceInstance() Service {
+	once.Do(func() {
+		storageInstance := storage.GetStorageInstance()
+		// Initialize your Spanner client and other dependencies here
+		spannerClient, err := storageInstance.GetSpannerClient()
+		if err != nil {
+			// Handle error appropriately, e.g., log and panic
+			//logger.Fatalf("Failed to initialize Spanner client: %v", err)
+		}
+		service = &spannerService{spannerClient: spannerClient, st: storage.GetStorageInstance()}
+	})
+	return service
+}
+
+// MayIReadOrWrite for checking the operation is allowed or not
+func (s *spannerService) MayIReadOrWrite(table string, IsMutation bool, operation string) bool {
+	return true
+}
 
 // getSpannerProjections makes a projection array of columns
 func getSpannerProjections(projectionExpression, table string, expressionAttributeNames map[string]string) []string {
@@ -49,7 +90,6 @@ func getSpannerProjections(projectionExpression, table string, expressionAttribu
 			projectionCols = append(projectionCols, pro)
 		}
 	}
-
 	linq.From(projectionCols).IntersectByT(linq.From(models.TableColumnMap[utils.ChangeTableNameForSpanner(table)]), func(str string) string {
 		return str
 	}).ToSlice(&projectionCols)
@@ -589,7 +629,7 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 	return updateResp, nil
 }
 
-func TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) ([]map[string]interface{}, error) {
+func (s *spannerService) TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string, st Storage) ([]map[string]interface{}, error) {
 
 	if len(keyMapArray) == 0 {
 		var resp = make([]map[string]interface{}, 0)
@@ -600,7 +640,6 @@ func TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, key
 		return nil, err
 	}
 	tableName := tableConf.ActualTable
-
 	projectionCols := getSpannerProjections(projectionExpression, tableName, expressionAttributeNames)
 	var pValues []interface{}
 	var sValues []interface{}
@@ -612,20 +651,14 @@ func TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, key
 		}
 		pValues = append(pValues, pValue)
 	}
-	fmt.Println("serices 621", pValues, sValues, projectionCols)
-	return storage.GetStorageInstance().SpannerTransactGetItems(ctx, tableName, pValues, sValues, projectionCols)
+
+	return st.SpannerTransactGetItems(ctx, tableName, pValues, sValues, projectionCols)
 }
 
-// func extractSpannerKeys(key map[string]models.AttributeValue) ([]interface{}, []interface{}) {
-// 	var pValues []interface{}
-// 	var sValues []interface{}
-
-// 	for keyName, keyValue := range key {
-// 		if keyName == "partition_key" {
-// 			pValues = append(pValues, keyValue.S) // Assuming it's a string
-// 		} else {
-// 			sValues = append(sValues, keyValue.S)
-// 		}
-// 	}
-// 	return pValues, sValues
-// }
+// 704,  employee map[emp_id:{
+// 	N: "1"
+//   }]
+//   744 [map[emp_id:1]]
+//   emp_id, first_name map[#emp_id:emp_id #first_name:first_name]
+//   [emp_id first_name]
+//serices 621 [1] [] [emp_id first_name]
