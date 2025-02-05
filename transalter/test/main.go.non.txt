@@ -1,0 +1,135 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/transalter/parser"
+)
+
+// Update Condition to include nested conditions and operators
+type Condition struct {
+	Column   string
+	Operator string
+	Value    string
+	AndOr    string       // To add context
+	Nested   []*Condition // If nested conditions exist
+}
+
+// Listener for SELECT queries.
+type SelectQueryListener struct {
+	*parser.BasePartiQLParserListener
+	Columns []string
+	Tables  []string
+	Where   []*Condition
+	OrderBy []string
+	Limit   string
+	Offset  string
+}
+
+// Listener for UPDATE queries.
+type UpdateQueryListener struct {
+	*parser.BasePartiQLParserListener
+	Table      string
+	SetColumns []string
+	Where      []*Condition
+	SetClauses []SetClause
+}
+
+type SetClause struct {
+	Column   string
+	Operator string
+	Value    string
+}
+
+// Extracts WHERE conditions and logical operators for SELECT
+func (l *SelectQueryListener) EnterPredicateComparison(ctx *parser.PredicateComparisonContext) {
+	condition := &Condition{
+		Column:   ctx.GetLhs().GetText(),
+		Operator: ctx.GetOp().GetText(),
+		Value:    ctx.GetRhs().GetText(),
+	}
+
+	// Capture nested conditions
+	if parent, ok := ctx.GetParent().(antlr.ParserRuleContext); ok {
+		switch parent.(type) {
+		case *parser.ExprAndContext:
+			condition.AndOr = "AND"
+		case *parser.ExprOrContext:
+			condition.AndOr = "OR"
+		}
+	}
+
+	l.Where = append(l.Where, condition)
+}
+
+func (l *SelectQueryListener) EnterExprOr(ctx *parser.ExprOrContext) {
+	fmt.Println("Detected OR Condition")
+}
+
+func (l *SelectQueryListener) EnterExprAnd(ctx *parser.ExprAndContext) {
+	fmt.Println("Detected AND Condition")
+}
+
+// Extracts WHERE conditions for UPDATE
+func (l *UpdateQueryListener) EnterPredicateComparison(ctx *parser.PredicateComparisonContext) {
+	condition := &Condition{
+		Column:   ctx.GetLhs().GetText(),
+		Operator: ctx.GetOp().GetText(),
+		Value:    ctx.GetRhs().GetText(),
+	}
+
+	// Capture nested conditions
+	if parent, ok := ctx.GetParent().(antlr.ParserRuleContext); ok {
+		switch parent.(type) {
+		case *parser.ExprAndContext:
+			condition.AndOr = "AND"
+		case *parser.ExprOrContext:
+			condition.AndOr = "OR"
+		}
+	}
+
+	l.Where = append(l.Where, condition)
+}
+
+func main() {
+	queries := []string{
+		"SELECT age, address FROM employee WHERE age > 30 ORDER BY age DESC LIMIT 10 OFFSET 5;",
+		"INSERT INTO employee VALUE {'emp_id': 10, 'first_name': 'Marc', 'last_name': 'Richards1', 'age': 10, 'address': 'Shamli'};",
+		"UPDATE employee SET age = 11, address = 'New address' WHERE emp_id = 11 AND age > 10;",
+		"DELETE FROM employee WHERE emp_id = 11 AND age = 20;",
+	}
+
+	for _, query := range queries {
+		fmt.Println("Executing query:", query)
+
+		lexer := parser.NewPartiQLLexer(antlr.NewInputStream(query))
+		stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+		p := parser.NewPartiQLParser(stream)
+
+		if strings.HasPrefix(query, "SELECT") {
+			selectListener := &SelectQueryListener{}
+			antlr.ParseTreeWalkerDefault.Walk(selectListener, p.Root())
+
+			fmt.Println("Extracted Query Components:")
+			fmt.Println("Columns:", strings.Join(selectListener.Columns, ", "))
+			fmt.Println("Tables:", strings.Join(selectListener.Tables, ", "))
+			for i, condition := range selectListener.Where {
+				fmt.Printf("WHERE Clause %d: %s %s %s\n", i, condition.Column, condition.Operator, condition.Value)
+			}
+
+		} else if strings.HasPrefix(query, "UPDATE") {
+			updateListener := &UpdateQueryListener{}
+			antlr.ParseTreeWalkerDefault.Walk(updateListener, p.Root())
+
+			fmt.Println("UPDATE table:", updateListener.Table)
+			for _, clause := range updateListener.SetClauses {
+				fmt.Printf("SET Clause: %s %s %s\n", clause.Column, clause.Operator, clause.Value)
+			}
+			for i, condition := range updateListener.Where {
+				fmt.Printf("WHERE Clause %d: %s %s %s, %s, %s, %v\n", i, condition.Column, condition.Operator, condition.Value, condition.AndOr, condition.AndOr, condition.Nested)
+			}
+		}
+	}
+}

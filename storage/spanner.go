@@ -197,12 +197,12 @@ func (s Storage) SpannerDelete(ctx context.Context, table string, m map[string]i
 			return err
 		}
 		table = utils.ChangeTableNameForSpanner(table)
-
 		pKey := tableConf.PartitionKey
 		pValue, ok := tmpMap[pKey]
 		if !ok {
 			return errors.New("ResourceNotFoundException", pKey)
 		}
+
 		var key spanner.Key
 		sKey := tableConf.SortKey
 		if sKey != "" {
@@ -733,7 +733,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 			return true
 		}
 		_, ok := rowMap[colName]
-		return !ok 
+		return !ok
 	}
 	if strings.HasPrefix(conditionalExpression, "attribute_exists") || strings.HasPrefix(conditionalExpression, "if_exists") {
 		if len(rowMap) == 0 {
@@ -745,7 +745,7 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 	return rowMap[conditionalExpression]
 }
 
-//parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
+// parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
 func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, error) {
 	singleRow := make(map[string]interface{})
 	if r == nil {

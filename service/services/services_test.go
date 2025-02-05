@@ -19,7 +19,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
-	"gopkg.in/go-playground/assert.v1"
+	"github.com/stretchr/testify/assert"
 )
 
 func init() {

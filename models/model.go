@@ -18,6 +18,7 @@ package models
 import (
 	"sync"
 
+	"cloud.google.com/go/spanner"
 	"github.com/antonmedv/expr/vm"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
@@ -72,7 +73,7 @@ type GetItemMeta struct {
 	Key                      map[string]*dynamodb.AttributeValue `json:"Key"`
 }
 
-//BatchGetMeta struct
+// BatchGetMeta struct
 type BatchGetMeta struct {
 	RequestItems map[string]BatchGetWithProjectionMeta `json:"RequestItems"`
 }
@@ -135,7 +136,7 @@ type UpdateAttr struct {
 	ExpressionAttributeValues map[string]*dynamodb.AttributeValue `json:"ExpressionAttributeValues"`
 }
 
-//ScanMeta for Scan request
+// ScanMeta for Scan request
 type ScanMeta struct {
 	TableName                 string                              `json:"TableName"`
 	IndexName                 string                              `json:"IndexName"`
@@ -163,30 +164,31 @@ type TableConfig struct {
 	IsComplement     bool                   `json:"IsComplement,omitempty"`
 	TableSource      string                 `json:"TableSource,omitempty"`
 	ActualTable      string                 `json:"ActualTable,omitempty"`
+	AttributeTypes   map[string]string      `json:"AttributeTypes,omitempty"`
 }
 
-//BatchWriteItem for Batch Operation
+// BatchWriteItem for Batch Operation
 type BatchWriteItem struct {
 	RequestItems map[string][]BatchWriteSubItems `json:"RequestItems"`
 }
 
-//BatchWriteItemResponse for Batch Operation
+// BatchWriteItemResponse for Batch Operation
 type BatchWriteItemResponse struct {
 	UnprocessedItems map[string][]BatchWriteSubItems `json:"UnprocessedItems"`
 }
 
-//BatchWriteSubItems is for BatchWriteItem
+// BatchWriteSubItems is for BatchWriteItem
 type BatchWriteSubItems struct {
 	DelReq BatchDeleteItem `json:"DeleteRequest"`
 	PutReq BatchPutItem    `json:"PutRequest"`
 }
 
-//BatchDeleteItem is for BatchWriteSubItems
+// BatchDeleteItem is for BatchWriteSubItems
 type BatchDeleteItem struct {
 	Key map[string]*dynamodb.AttributeValue `json:"Key"`
 }
 
-//BatchPutItem is for BatchWriteSubItems
+// BatchPutItem is for BatchWriteSubItems
 type BatchPutItem struct {
 	Item map[string]*dynamodb.AttributeValue `json:"Item"`
 }
@@ -275,4 +277,20 @@ type StreamDataModel struct {
 	SequenceNumber int64                  `json:"SequenceNumber"`
 	EventID        string                 `json:"EventId"`
 	EventSourceArn string                 `json:"EventSourceArn"`
+}
+
+// ScanMeta for Scan request
+type ExecuteStatement struct {
+	Limit        int64                      `json:"Limit"`
+	NextToken    int64                      `json:"NextToken"`
+	Parameters   []*dynamodb.AttributeValue `json:"Parameters"`
+	ReturnValues string                     `json:"ReturnValues"`
+	Statement    string                     `json:"Statement"`
+	TableName    string                     `json:"TableName"`
+}
+
+type ExecuteStatementQuery struct {
+	PartiQl      string
+	Params       map[string]interface{}
+	SQLStatement spanner.Statement
 }
