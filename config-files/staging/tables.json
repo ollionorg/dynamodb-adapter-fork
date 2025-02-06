@@ -1,0 +1,38 @@
+{
+    "employee": {
+        "partitionKey": "emp_id",
+        "sortKey": "",
+        "attributeTypes": {
+            "emp_id": "N",
+            "first_name": "S",
+            "last_name": "S",
+            "address": "S",
+            "age": "N"
+        },
+        "indices": {}
+    },
+    "department": {
+        "partitionKey": "d_id",
+        "sortKey": "",
+        "attributeTypes": {
+            "d_id": "N",
+            "d_name": "S",
+            "d_specialization": "S"
+        },
+        "indices": {}
+    },
+    "mapdynamo": {
+        "partitionKey": "guid",
+        "sortKey": "context",
+        "spannerIndexName": "guid",
+        "actualTable": "mapdynamo",
+        "attributeTypes": {
+            "guid": "S",
+            "context": "S",
+            "contact_ranking_list": "S",
+            "name": "S",
+            "address": "M"
+        },
+        "indices": {}
+    }
+  }
