@@ -541,16 +541,16 @@ exprSelect
         order=orderByClause?
         limit=limitClause?
         offset=offsetByClause? # SfwQuery
-    | exprOr            # SfwBase
     ;
 
+// Include here for top-level OR operation
 exprOr
-    : lhs=exprOr OR rhs=exprAnd     # Or
+    : lhs=exprAnd (OR rhs=exprOr)*
     | parent_=exprAnd                # ExprOrBase
     ;
 
 exprAnd
-    : lhs=exprAnd op=AND rhs=exprNot  # And
+    : lhs=exprNot (AND rhs=exprAnd)*
     | parent_=exprNot                  # ExprAndBase
     ;
 
@@ -563,12 +563,10 @@ exprPredicate
     : lhs=exprPredicate op=(LT_EQ|GT_EQ|ANGLE_LEFT|ANGLE_RIGHT|NEQ|EQ) rhs=mathOp00  # PredicateComparison
     | lhs=exprPredicate IS NOT? type                                                 # PredicateIs
     | lhs=exprPredicate NOT? IN PAREN_LEFT expr PAREN_RIGHT                          # PredicateIn
-    | lhs=exprPredicate NOT? IN rhs=mathOp00                                         # PredicateIn
     | lhs=exprPredicate NOT? LIKE rhs=mathOp00 ( ESCAPE escape=expr )?               # PredicateLike
     | lhs=exprPredicate NOT? BETWEEN lower=mathOp00 AND upper=mathOp00               # PredicateBetween
     | parent_=mathOp00                                                                # PredicateBase
     ;
-
 // TODO : Opreator precedence of BITWISE_AND (&) may change in the future.
 //  SEE: https://github.com/partiql/partiql-docs/issues/50
 mathOp00

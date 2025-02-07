@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/antlr4-go/antlr/v4"
-	"github.com/cloudspannerecosystem/dynamodb-adapter/translator/partiqlparser/parser"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/translator/PartiQLParser/parser"
 )
 
 // Funtion to create lexer and parser object for the partiql query

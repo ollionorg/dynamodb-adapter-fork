@@ -17,14 +17,33 @@ type Condition struct {
 	LogicOp  string
 }
 
+type LogicalGroup struct {
+	Conditions []Condition
+	Operator   string // AND or OR
+}
+
 type SelectQueryListener struct {
 	*parser.BasePartiQLParserListener
-	Columns []string
-	Tables  []string
-	Where   []Condition
-	OrderBy []string
-	Limit   string
-	Offset  string
+	Columns      []string
+	Tables       []string
+	Where        []Condition
+	OrderBy      []string
+	Limit        string
+	Offset       string
+	LogicStack   []LogicalGroup // Stack to track logical groups
+	CurrentLogic string         // Tracks current logical operator
+}
+
+func (l *SelectQueryListener) EnterExprAnd(ctx *parser.ExprAndContext) {
+	fmt.Println("Entering AND Logical Context")
+	l.CurrentLogic = "AND"
+	l.LogicStack = append(l.LogicStack, LogicalGroup{Operator: "AND"})
+}
+
+func (l *SelectQueryListener) EnterExprOr(ctx *parser.ExprOrContext) {
+	fmt.Println("Entering OR Logical Context")
+	l.CurrentLogic = "OR"
+	l.LogicStack = append(l.LogicStack, LogicalGroup{Operator: "OR"})
 }
 
 func (l *SelectQueryListener) EnterProjectionItems(ctx *parser.ProjectionItemsContext) {
@@ -51,70 +70,195 @@ func (l *SelectQueryListener) EnterOffsetByClause(ctx *parser.OffsetByClauseCont
 	l.Offset = ctx.GetText()
 }
 
-func (l *SelectQueryListener) EnterExprAnd(ctx *parser.ExprAndContext) {
-	fmt.Printf("Entering AND Logical Context")
-	val := ctx.GetText()
-	fmt.Println(val)
-}
-
-// func (l *SelectQueryListener) EnterExprOr(ctx *parser.SelectClauseContext) {
-// 	val := ctx.GetText()
-// 	fmt.Println("Entering OR Logical Context")
-// 	fmt.Println(val)
-// }
-
 // Extracts WHERE conditions for SELECT
 func (l *SelectQueryListener) EnterPredicateComparison(ctx *parser.PredicateComparisonContext) {
+	fmt.Println("EnterPredicateComparison", ctx.GetText())
 	column := ctx.GetLhs().GetText()
 	operator := ctx.GetOp().GetText()
 	value := ctx.GetRhs().GetText()
 
 	condition := Condition{
-		Column:   column,
+		Column:   strings.ReplaceAll(column, `'`, ""),
 		Operator: operator,
-		Value:    value,
+		Value:    strings.ReplaceAll(value, `'`, `"`),
 	}
 
-	// Navigate through ancestors to find logical connectors
-	parent := ctx.GetParent()
-	for parent != nil {
-		switch parent.(type) {
-		case *parser.ExprAndContext:
-			fmt.Println("Found AND logic")
-			condition.ANDOpr = "AND"
-			parent = nil
-		case *parser.ExprOrContext:
-			fmt.Println("Found OR logic")
-			condition.OROpr = "OR"
-			parent = nil
-		default:
-			parent = parent.GetParent() // Go up in the hierarchy
+	if len(l.LogicStack) > 0 {
+		lastGroup := &l.LogicStack[len(l.LogicStack)-1]
+		lastGroup.Conditions = append(lastGroup.Conditions, condition)
+	} else {
+		// Avoid adding logic operators among the base conditions themselves
+		l.Where = append(l.Where, condition)
+	}
+
+	fmt.Printf("Added condition: %s %s %s under logic: %s\n",
+		column, operator, value, l.CurrentLogic)
+}
+
+func (l *SelectQueryListener) ExitExprAnd(ctx *parser.ExprAndContext) {
+	fmt.Println("ExitExprAnd-->", ctx.GetText())
+	if len(l.LogicStack) > 0 {
+		lastGroup := l.LogicStack[len(l.LogicStack)-1]
+		l.LogicStack = l.LogicStack[:len(l.LogicStack)-1] // Pop from stack
+		for i, cond := range lastGroup.Conditions {
+			// Ensure all conditions except the first get AND
+			if i > 0 {
+				cond.ANDOpr = "AND"
+			}
+			l.Where = append(l.Where, cond)
 		}
 	}
+}
 
-	l.Where = append(l.Where, condition)
-	fmt.Printf("Added condition: %s %s %s with logic: %s%s\n",
-		column, operator, value, condition.ANDOpr, condition.OROpr)
+func (l *SelectQueryListener) ExitExprOr(ctx *parser.ExprOrContext) {
+	fmt.Println("ExitExprOr-->", ctx.GetText())
+	if len(l.LogicStack) > 0 {
+		lastGroup := l.LogicStack[len(l.LogicStack)-1]
+		l.LogicStack = l.LogicStack[:len(l.LogicStack)-1] // Pop from stack
+		for i, cond := range lastGroup.Conditions {
+			// Ensure all conditions except the first get OR
+			if i > 0 {
+				cond.OROpr = "OR"
+			}
+			l.Where = append(l.Where, cond)
+		}
+	}
 }
 
 func (t *Translator) ToSpannerSelect(query string) (*SelectQueryMap, error) {
+	var err error
+	var whereConditions []Condition // Local variable to store WHERE conditions temporarily
 
+	// Lexer and parser setup
 	lexer := parser.NewPartiQLLexer(antlr.NewInputStream(query))
 	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
 	p := parser.NewPartiQLParser(stream)
+
 	selectListener := &SelectQueryListener{}
 	antlr.ParseTreeWalkerDefault.Walk(selectListener, p.Root())
 
-	fmt.Println("Extracted Query Components:")
-	fmt.Println("Columns:", strings.Join(selectListener.Columns, ", "))
-	fmt.Println("Tables:", strings.Join(selectListener.Tables, ", "))
-	if len(selectListener.Where) > 0 {
-		for i := range selectListener.Where {
-			fmt.Printf("WHERE Clause %d: %s %s %s, %s, %s\n", i, selectListener.Where[i].Column, selectListener.Where[i].Operator, selectListener.Where[i].Value, selectListener.Where[i].ANDOpr, selectListener.Where[i].OROpr)
-		}
+	// Capture WHERE conditions
+	whereConditions = append(whereConditions, selectListener.Where...)
+
+	// Build the SelectQueryMap
+	selectQueryMap := &SelectQueryMap{
+		PartiQLQuery:      query,
+		SpannerQuery:      "",       // TODO: Assign translated Spanner SQL
+		QueryType:         "SELECT", // Assuming SELECT by context
+		Table:             selectListener.Tables[0],
+		ParamKeys:         []string{}, // Populate if params are used
+		ProjectionColumns: selectListener.Columns,
+		Limit:             selectListener.Limit,
+		OrderBy:           selectListener.OrderBy,
+		Offset:            selectListener.Offset,
 	}
-	fmt.Println("ORDER BY:", strings.Join(selectListener.OrderBy, ", "))
-	fmt.Println("LIMIT:", selectListener.Limit)
-	fmt.Println("OFFSET:", selectListener.Offset)
-	return nil, nil
+	// Generate Spanner query string
+	selectQueryMap.SpannerQuery, err = formSpannerQuery(selectQueryMap, whereConditions)
+	if err != nil {
+		return nil, err
+	}
+
+	return selectQueryMap, nil
 }
+
+func formSpannerQuery(selectQueryMap *SelectQueryMap, whereConditions []Condition) (string, error) {
+	spannerQuery := "SELECT "
+
+	// Construct projection columns or use * if empty
+	if len(selectQueryMap.ProjectionColumns) == 0 {
+		spannerQuery += "* "
+	} else {
+		spannerQuery += strings.Join(selectQueryMap.ProjectionColumns, ", ") + " "
+	}
+
+	spannerQuery += "FROM " + selectQueryMap.Table
+
+	// Construct WHERE clause
+	if len(whereConditions) > 0 {
+		var whereClauses []string
+		for i, cond := range whereConditions {
+			clause := fmt.Sprintf("%s %s %s", cond.Column, cond.Operator, cond.Value)
+
+			// Add logical operators if it's not the first condition
+			if i > 0 {
+				if cond.ANDOpr != "" {
+					clause = cond.ANDOpr + " " + clause
+				} else if cond.OROpr != "" {
+					clause = cond.OROpr + " " + clause
+				}
+			}
+			whereClauses = append(whereClauses, clause)
+		}
+		// Join the WHERE clauses using the appropriate spacing
+		spannerQuery += " WHERE " + strings.Join(whereClauses, " ")
+	}
+
+	// Append ORDER BY clause if present
+	if len(selectQueryMap.OrderBy) > 0 {
+		spannerQuery += " ORDER BY " + strings.Join(selectQueryMap.OrderBy, ", ")
+	}
+
+	// Append LIMIT clause if present
+	if selectQueryMap.Limit != "" {
+		spannerQuery += " LIMIT " + strings.Trim(selectQueryMap.Limit, "LIMIT")
+	}
+
+	// Append OFFSET clause if present
+	if selectQueryMap.Offset != "" {
+		spannerQuery += " OFFSET " + strings.Trim(selectQueryMap.Offset, "OFFSET")
+	}
+
+	return spannerQuery, nil
+}
+
+// func convertType(tablename string, col string, val string) (string, interface{}) {
+// 	colDLL, ok := models.TableDDL[tablename]
+// 	if !ok {
+// 		return "", ""
+// 	}
+// 	v, ok := colDLL[col]
+// 	if !ok {
+// 		return "", ""
+// 	}
+// 	switch v {
+// 	case "STRING(MAX)":
+// 		return col, fmt.Sprintf("%v", val)
+
+// 	case "INT64":
+// 		// Convert to int64
+// 		intValue, err := strconv.ParseInt(fmt.Sprintf("%v", val), 10, 64)
+// 		if err != nil {
+// 			return nil, fmt.Errorf("error converting to int64: %v", err)
+// 		}
+// 		pkeyMap[k] = intValue
+
+// 	case "FLOAT64":
+// 		// Convert to float64
+// 		floatValue, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+// 		if err != nil {
+// 			return nil, fmt.Errorf("error converting to float64: %v", err)
+// 		}
+// 		pkeyMap[k] = floatValue
+
+// 	case "NUMERIC":
+// 		// Treat same as FLOAT64 here or use a specific library for decimal types
+// 		numValue, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+// 		if err != nil {
+// 			return nil, fmt.Errorf("error converting to numeric: %v", err)
+// 		}
+// 		pkeyMap[k] = numValue
+
+// 	case "BOOL":
+// 		// Convert to boolean
+// 		boolValue, err := strconv.ParseBool(fmt.Sprintf("%v", val))
+// 		if err != nil {
+// 			return nil, fmt.Errorf("error converting to bool: %v", err)
+// 		}
+// 		pkeyMap[k] = boolValue
+
+// 	default:
+// 		return nil, fmt.Errorf("unsupported data type: %s", v)
+// 	}
+
+// 	return "", ""
+// }
