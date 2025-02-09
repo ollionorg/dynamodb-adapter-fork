@@ -116,11 +116,15 @@ func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys 
 
 // ExecuteSpannerQuery - this will execute query on spanner database
 func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []string, isCountQuery bool, stmt spanner.Statement) ([]map[string]interface{}, error) {
+
 	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
 	}
+
 	itr := s.getSpannerClient(table).Single().WithTimestampBound(spanner.ExactStaleness(time.Second*10)).Query(ctx, stmt)
+
 	defer itr.Stop()
 	allRows := []map[string]interface{}{}
 	for {
@@ -147,6 +151,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 		}
 		allRows = append(allRows, singleRow)
 	}
+
 	return allRows, nil
 }
 
@@ -883,7 +888,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			return nil, nil, errors.New("ResourceNotFoundException", k)
 		}
 		switch v {
-		case "STRING(MAX)":
+		case "S":
 			var s spanner.NullString
 			err := r.Column(i, &s)
 			if err != nil {
@@ -903,25 +908,13 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 					singleRow[k] = s.StringVal
 				}
 			}
-		case "BYTES(MAX)":
+		case "B":
 			res, err := parseBytes(r, i, k)
 			if err != nil {
 				continue
 			}
 			singleRow[k] = res[k]
-		case "INT64":
-			var s spanner.NullInt64
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, spannerRow, errors.New("ValidationException", err, k)
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.Int64
-			}
-		case "FLOAT64":
+		case "N":
 			var s spanner.NullFloat64
 			err := r.Column(i, &s)
 			if err != nil {

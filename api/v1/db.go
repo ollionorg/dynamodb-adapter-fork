@@ -186,7 +186,7 @@ func queryResponse(query models.Query, c *gin.Context) {
 	}
 
 	if query.Limit == 0 {
-		query.Limit = config.ConfigurationMap.QueryLimit
+		query.Limit = models.GlobalConfig.Spanner.QueryLimit
 	}
 	query.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(query.TableName, query.ExpressionAttributeNames)
 	query = ReplaceHashRangeExpr(query)

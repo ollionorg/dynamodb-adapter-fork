@@ -543,7 +543,7 @@ func ConvertFromMap(item map[string]*dynamodb.AttributeValue, v interface{}, tab
 			if e, ok := r.(runtime.Error); ok {
 				err = e
 			} else if s, ok := r.(string); ok {
-				err = fmt.Errorf(s)
+				err = fmt.Errorf("%s", s)
 			} else {
 				err = r.(error)
 			}
