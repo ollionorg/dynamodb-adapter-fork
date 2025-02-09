@@ -1,3 +1,8 @@
+
+# Project Title
+
+A brief description of what this project does and who it's for
+
 # DynamoDB Adapter
 
 [![Join the chat at
@@ -50,12 +55,20 @@ DynamoDB Adapter currently supports the folowing operations:
 
 DynamoDB Adapter currently supports the following DynamoDB data types
 
-| DynamoDB Data Type            | Spanner Data Types |
-| ------------------------------| ------------------ |
-| `N` (number type)             | `INT64`, `FLOAT64`, `NUMERIC` |
-| `BOOL` (boolean)              | `BOOL` |
-| `B` (binary type)             | `BYTES(MAX)` |
-| `S` (string and data values)  | `STRING(MAX)` |
+| DynamoDB Data Type            | Spanner Data Types
+| ------------------------------| ------------------
+| `N` (number type)             | `INT64`, `FLOAT64`, `NUMERIC`
+| `BOOL` (boolean)              | `BOOL`
+| `B` (binary type)             | `BYTES(MAX)`
+| `S` (string and data values)  | `STRING(MAX)`
+| `M` (map and data values)     | `JSON`
+
+- Note: The Map (M) supports the following types for values, while the key type is always a string.
+  - `N` - number.
+  - `BOOL` - boolean
+  - `B` - binary
+  - `S` - string
+  - `M` - map
 
 ## Configuration
 
@@ -175,6 +188,9 @@ go run main.go
 ```
 
 ```
+
+## Limitations
+  1. The `FilterExpression` for Query and Scan API has the support only for `=`operator.
 
 ## API Documentation
 
