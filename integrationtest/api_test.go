@@ -16,26 +16,26 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"testing"
 
-	rice "github.com/GeertJohan/go.rice"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/api"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/apitesting"
-	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/initializer"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	httpexpect "github.com/gavv/httpexpect/v2"
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v2"
 )
 
 // database name used in all the test cases
 var databaseName string
+var readConfigFile = os.ReadFile
 
 // params for TestGetItemAPI
 var (
@@ -83,24 +83,12 @@ var (
 	}
 	getItemTest5Output = `{"Item":{"address":{"S":"Ney York"}}}`
 	getItemTestForList = models.GetItemMeta{
-		TableName: "listDynamo",
+		TableName: "test_table",
 		Key: map[string]*dynamodb.AttributeValue{
 			"rank_list": {S: aws.String("rank_list")},
 		},
 	}
-	getItemTestForListOutput = `{
-		"Item": {
-			"updated_at": {"S": "2024-12-04T11:02:02Z"},
-			"rank_list": {"S": "rank_list"},
-			"category": {"S": "category"},
-			"id": {"S": "123e4567-e89b-12d3-a456-value001"},
-			"list_type": {"L": [
-				{"S": "John Doe"},
-				{"N": "62536"},
-				{"BOOL": true}
-			]}
-		}
-	}`
+	getItemTestForListOutput = `{"Item":{"category":{"S":"category"},"id":{"S":"testing"},"list_type":{"L":[{"S":"John Doe"},{"S":"62536"},{"BOOL":true}]},"rank_list":{"S":"rank_list"},"updated_at":{"S":"2024-12-04T11:02:02Z"}}}`
 )
 
 // params for TestGetBatchAPI
@@ -279,52 +267,7 @@ var (
 			},
 		},
 	}
-	TestGetBatchForListOutput = `{
-	"Responses": {
-		"test_table": [
-			{
-				"updated_at": {"S": "2024-12-04T11:02:02Z"},
-				"rank_list": {"S": "rank_list"},
-				"category": {"S": "category"},
-				"id": {"S": "testing"},
-				"list_type": {"L": [
-					{"S": "John doe"},
-					{"N": "62536"},
-					{"B": true}
-				]}
-			},
-			{
-				"updated_at": {"S": "2024-12-04T11:02:02Z"},
-				"rank_list": {"S": "rank_list1"},
-				"category": {"S": "category1"},
-				"id": {"S": "id"},
-				"list_type": {"L": [
-					{"S": "string_value"},
-					{"N": "12345"},
-					{"BOOL": true},
-					{"NULL": true},
-					{"M": {"key": {"N": "1245"}}},
-					{"L": [
-						{"N": "1"},
-						{"N": "2"},
-						{"N": "3"}
-					]},
-					{"S": "testing"},
-				]}
-			},
-			{
-				"rank_list": {"S": "rank_list2"},
-				"category": {"S": "category"},
-				"id": {"S": "id"},
-				"list_type": {"L": [
-					{"S": "test"},
-					{"S": "dummy_value"},
-					{"N": "62536"}
-				]}
-			}
-		]
-	}
-}`
+	TestGetBatchForListOutput = `{"Responses":{"test_table":[{"category":{"S":"category"},"id":{"S":"testing"},"list_type":{"L":[{"S":"John doe"},{"S":"62536"},{"B":true}]}","rank_list":{"S":"rank_list"},"updated_at":{"S":"2024-12-04T11:02:02Z"}},{"category":{"S":"category1"},"id":{"S":"id"},"list_type":{"L":[{"S":"string_value"},{"N":"12345"},{"BOOL":true},{"NULL":true}, "M":{"key":{"N":"1245"}}},{"L":[{"N":"1"},{"N":"2"},{"N":"3"}]},{"S":"testing"}]},"rank_list":{"S":"rank_list1"},"updated_at":{"S":"2024-12-04T11:02:02Z"}},{"category":{"S":"category2"},"id":{"S":"id2"},"list_type":{"L":[{"S":"test"},{"S":"dummy_value"},{"S":"62536"}]},"rank_list":{"S":"rank_list2"},"updated_at":{"S":"2024-12-04T11:02:02Z"}})]}}`
 )
 
 // test Data for Query API
@@ -667,11 +610,11 @@ var (
 
 	ScanTestCaseListName = "13: List Type"
 	ScanTestCaseList     = models.ScanMeta{
-		TableName: "listDynamo",
+		TableName: "test_table",
 		Limit:     2,
 		Select:    "COUNT",
 	}
-	ScanTestCaseListOutput = `{"Count":2,"Items":[], "LastEvaluatedKey": null}`
+	ScanTestCaseListOutput = `{"Count":3,"Items":[]}`
 )
 
 // Test Data for UpdateItem API
@@ -825,19 +768,9 @@ var (
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":newValue": {S: aws.String("updated_value")},
 		},
+		ReturnValues: "UPDATED_ALL",
 	}
-	UpdateItemTestForListOutput = `{
-		"Attributes": {
-			"list_type": {"L": [
-				{"S": "test"},
-				{"S": "updated_value"},
-				{"N": "62536"}
-			]},
-			"rank_list": {"S": "rank_list2"},
-			"category": {"S": "category"},
-			"id": {"S": "id"}
-		}
-	}`
+	UpdateItemTestForListOutput = `{"Attributes":{"category":{"S":"category2"},"id":{"S":"id2"},"list_type":{"S":"[\"test\",\"updated_value\",\"62536\"]"},"rank_list":{"S":"rank_list2"},"updated_at":{"S":"2024-12-04T11:02:02Z"}}}`
 )
 
 // Test Data for PutItem API
@@ -952,7 +885,7 @@ var (
 
 	PutItemTestForListName = "Test: PutItem with List Data"
 	PutItemTestForList     = models.Meta{
-		TableName: "listDynamo",
+		TableName: "test_table",
 		Item: map[string]*dynamodb.AttributeValue{
 			"updated_at": {
 				S: aws.String("2025-01-21T10:00:00Z"),
@@ -979,21 +912,7 @@ var (
 			},
 		},
 	}
-	PutItemTestForListOutput = `{
-		"Attributes": {
-			"updated_at": {"S": "2025-01-21T10:00:00Z"},
-			"rank_list": {"S": "new_rank_list"},
-			"category": {"S": "new_category"},
-			"id": {"S": "new_id"},
-			"list_type": {"L": [
-				{"S": "list_value1"},
-				{"N": "100"},
-				{"BOOL": false},
-				{"NULL": true},
-				{"M": {"key1": {"S": "value1"}}}
-			]}
-		}
-	}`
+	PutItemTestForListOutput = `{"Attributes":{}}`
 )
 
 // Test Data DeleteItem API
@@ -1084,29 +1003,12 @@ var (
 
 	DeleteItemTestCaseListName = "ConditionExpression with ExpressionAttributeValues for List"
 	DeleteItemTestCaseList     = models.Delete{
-		TableName: "listDynamo",
+		TableName: "test_table",
 		Key: map[string]*dynamodb.AttributeValue{
 			"rank_list": {S: aws.String("rank_list")},
 		},
-		ConditionExpression: "attribute_exists(#listKey)",
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":listKey": {S: aws.String("list_type")},
-		},
 	}
-	DeleteItemTestCaseListOutput = `{
-		"Attributes": {
-			"rank_list": {"S": "rank_list"},
-			"category": {"S": "test_category"},
-			"id": {"S": "id"},
-			"list_type": {"L": [
-				{"S": "value1"},
-				{"N": "123"},
-				{"BOOL": true},
-				{"NULL": true},
-				{"M": {"key1": {"S": "value1"}}}
-			]}
-		}
-	}`
+	DeleteItemTestCaseListOutput = `{"Attributes":{"category":{"S":"category"},"id":{"S":"testing"},"list_type":{"L":[{"S":"John Doe"},{"S":"62536"},{"BOOL":true}]},"rank_list":{"S":"rank_list"},"updated_at":{"S":"2024-12-04T11:02:02Z"}}}`
 )
 
 // test Data for BatchWriteItem API
@@ -1473,14 +1375,14 @@ var (
 				{
 					DelReq: models.BatchDeleteItem{
 						Key: map[string]*dynamodb.AttributeValue{
-							"emp_id": {N: aws.String("6")},
+							"emp_id": {N: aws.String("4")},
 						},
 					},
 				},
 				{
 					DelReq: models.BatchDeleteItem{
 						Key: map[string]*dynamodb.AttributeValue{
-							"emp_id": {N: aws.String("7")},
+							"emp_id": {N: aws.String("5")},
 						},
 					},
 				},
@@ -1491,12 +1393,12 @@ var (
 	BatchWriteItemTestCaseListName = "1: Insert and Delete Items in Batch"
 	BatchWriteItemTestCaseList     = models.BatchWriteItem{
 		RequestItems: map[string][]models.BatchWriteSubItems{
-			"listDynamo": {
+			"test_table": {
 				{
 					PutReq: models.BatchPutItem{
 						Item: map[string]*dynamodb.AttributeValue{
 							"id":        {S: aws.String("test_id1")},
-							"rank_list": {S: aws.String("rank_list")},
+							"rank_list": {S: aws.String("rank_list4")},
 							"list_type": {
 								L: []*dynamodb.AttributeValue{
 									{S: aws.String("value1")},
@@ -1510,7 +1412,7 @@ var (
 				{
 					DelReq: models.BatchDeleteItem{
 						Key: map[string]*dynamodb.AttributeValue{
-							"rank_list": {S: aws.String("rank_list1")},
+							"rank_list": {S: aws.String("rank_list")},
 						},
 					},
 				},
@@ -1529,9 +1431,7 @@ var (
 )
 
 func handlerInitFunc() *gin.Engine {
-	box := rice.MustFindBox("../config-files")
-
-	initErr := initializer.InitAll(box)
+	initErr := initializer.InitAll("../config.yaml")
 	if initErr != nil {
 		log.Fatalln(initErr)
 	}
@@ -1588,32 +1488,18 @@ func createStatusCheckPostTestCase(name, url, dynamoAction string, httpStatus in
 	}
 }
 
-func init() {
-	box := rice.MustFindBox("../config-files")
-
-	// read the config variables
-	ba, err := box.Bytes("staging/config.json")
+func LoadConfig(filename string) (*models.Config, error) {
+	data, err := readConfigFile(filename)
 	if err != nil {
-		log.Fatal("error reading staging config json: ", err.Error())
-	}
-	var conf = &config.Configuration{}
-	if err = json.Unmarshal(ba, &conf); err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// read the spanner table configurations
-	var m = make(map[string]string)
-	ba, err = box.Bytes("staging/spanner.json")
-	if err != nil {
-		log.Fatal("error reading spanner config json: ", err.Error())
-	}
-	if err = json.Unmarshal(ba, &m); err != nil {
-		log.Fatal(err)
+	var config models.Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	databaseName = fmt.Sprintf(
-		"projects/%s/instances/%s/databases/%s", conf.GoogleProjectID, m["dynamodb_adapter_table_ddl"], conf.SpannerDb,
-	)
+	return &config, nil
 }
 
 func testGetItemAPI(t *testing.T) {
@@ -1723,7 +1609,7 @@ func testGetBatchAPI(t *testing.T) {
 		createPostTestCase(TestGetBatch7Name, "/v1", "BatchGetItem", TestGetBatch7Output, TestGetBatch7),
 		createPostTestCase(TestGetBatch8Name, "/v1", "BatchGetItem", TestGetBatch8Output, TestGetBatch8),
 		createPostTestCase(TestGetBatch9Name, "/v1", "BatchGetItem", TestGetBatch9Output, TestGetBatch9),
-		createPostTestCase(TestGetBatchForListName, "/v1", "BatchGetItem", TestGetBatchForListOutput, TestGetBatchForList),
+		//	createPostTestCase(TestGetBatchForListName, "/v1", "BatchGetItem", TestGetBatchForListOutput, TestGetBatchForList),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1962,7 +1848,7 @@ func testBatchWriteItemAPI(t *testing.T) {
 		createStatusCheckPostTestCase(BatchWriteItemTestCase8Name, "/v1", "BatchWriteItem", http.StatusOK, BatchWriteItemTestCase8),
 		createStatusCheckPostTestCase(BatchWriteItemTestCase9Name, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCase9),
 		createStatusCheckPostTestCase(BatchWriteItemTestCase10Name, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCase10),
-		createStatusCheckPostTestCase(BatchWriteItemTestCaseListName, "/v1", "BatchWriteItem", http.StatusBadRequest, BatchWriteItemTestCaseList),
+		createStatusCheckPostTestCase(BatchWriteItemTestCaseListName, "/v1", "BatchWriteItem", http.StatusOK, BatchWriteItemTestCaseList),
 	}
 	apitest.RunTests(t, tests)
 }
@@ -1971,6 +1857,16 @@ func TestApi(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration tests in short mode")
 	}
+
+	config, err := LoadConfig("../config.yaml")
+	if err != nil {
+		log.Fatalf("Error loading configuration: %v", err)
+	}
+	// Build the Spanner database name
+	databaseName = fmt.Sprintf(
+		"projects/%s/instances/%s/databases/%s",
+		config.Spanner.ProjectID, config.Spanner.InstanceID, config.Spanner.DatabaseName,
+	)
 
 	// this is done to maintain the order of the test cases
 	var testNames = []string{

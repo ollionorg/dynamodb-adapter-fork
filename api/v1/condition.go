@@ -184,7 +184,6 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 			if !ok {
 				continue
 			}
-
 			// Handle SET with list index, e.g., guid[1] = :new_value
 			matches := listIndexRegex.FindStringSubmatch(field)
 			if len(matches) == 3 {
@@ -199,7 +198,6 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 				if !ok {
 					continue
 				}
-
 				// Validate index bounds
 				if index < 0 || index >= len(oldList) {
 					continue
@@ -207,7 +205,12 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 
 				updatedList := make([]interface{}, len(oldList))
 				copy(updatedList, oldList)
-				updatedList[index] = value
+
+				if index == len(oldList) {
+					updatedList = append(updatedList, value) // Append new value
+				} else if index < len(oldList) {
+					updatedList[index] = value // Modify existing value
+				}
 				resp[listField] = updatedList
 				continue
 			}
@@ -686,7 +689,7 @@ func ConvertFromMap(item map[string]*dynamodb.AttributeValue, v interface{}, tab
 			if e, ok := r.(runtime.Error); ok {
 				err = e
 			} else if s, ok := r.(string); ok {
-				err = fmt.Errorf(s)
+				err = fmt.Errorf("%s", s)
 			} else {
 				err = r.(error)
 			}

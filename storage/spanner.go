@@ -116,11 +116,15 @@ func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys 
 
 // ExecuteSpannerQuery - this will execute query on spanner database
 func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []string, isCountQuery bool, stmt spanner.Statement) ([]map[string]interface{}, error) {
+
 	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
 	}
+
 	itr := s.getSpannerClient(table).Single().WithTimestampBound(spanner.ExactStaleness(time.Second*10)).Query(ctx, stmt)
+
 	defer itr.Stop()
 	allRows := []map[string]interface{}{}
 	for {
@@ -147,6 +151,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 		}
 		allRows = append(allRows, singleRow)
 	}
+
 	return allRows, nil
 }
 
@@ -370,15 +375,6 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 					}
 					tmpMap[k] = existingVal + v2
 
-				case models.StringSet:
-					tmpMap[k] = mergeStringSets(existingVal, v)
-
-				case models.NumberSet:
-					tmpMap[k] = mergeNumberSets(existingVal, v)
-
-				// case models.BinarySet:
-				// 	tmpMap[k] = mergeBinarySets(existingVal, v)
-
 				default:
 					logger.LogDebug(reflect.TypeOf(v).String())
 				}
@@ -426,24 +422,6 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 	})
 
 	return updatedObj, err
-}
-
-func mergeStringSets(existing, new interface{}) models.StringSet {
-	set1 := existing.(models.StringSet)
-	set2 := new.(models.StringSet)
-	for v := range set2 {
-		set1[v] = struct{}{}
-	}
-	return set1
-}
-
-func mergeNumberSets(existing, new interface{}) models.NumberSet {
-	set1 := existing.(models.NumberSet)
-	set2 := new.(models.NumberSet)
-	for v := range set2 {
-		set1[v] = struct{}{}
-	}
-	return set1
 }
 
 func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition) error {
@@ -908,7 +886,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			return nil, errors.New("ResourceNotFoundException", k)
 		}
 		switch v {
-		case "STRING(MAX)":
+		case "S":
 			var s spanner.NullString
 			err := r.Column(i, &s)
 			if err != nil {
@@ -920,7 +898,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			if !s.IsNull() {
 				singleRow[k] = s.StringVal
 			}
-		case "BYTES(MAX)":
+		case "B":
 			var s []byte
 			err := r.Column(i, &s)
 			if err != nil {
@@ -974,19 +952,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				}
 				singleRow[k] = m
 			}
-		case "INT64":
-			var s spanner.NullInt64
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.Int64
-			}
-		case "FLOAT64":
+		case "N":
 			var s spanner.NullFloat64
 			err := r.Column(i, &s)
 			if err != nil {
@@ -999,7 +965,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			if !s.IsNull() {
 				singleRow[k] = s.Float64
 			}
-		case "NUMERIC":
+		case "NUmeric":
 			var s spanner.NullNumeric
 			err := r.Column(i, &s)
 			if err != nil {
@@ -1029,7 +995,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			if !s.IsNull() {
 				singleRow[k] = s.Bool
 			}
-		case "JSON":
+		case "L":
 			var jsonValue spanner.NullJSON
 			err := r.Column(i, &jsonValue)
 			if err != nil {
