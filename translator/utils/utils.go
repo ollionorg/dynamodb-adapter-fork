@@ -2,6 +2,7 @@ package translator
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/translator/PartiQLParser/parser"
@@ -23,4 +24,13 @@ func NewPartiQLParser(partiQL string, isDebug bool) (*parser.PartiQLParser, erro
 		p.RemoveErrorListeners()
 	}
 	return p, nil
+}
+
+func trimSingleQuotes(s string) string {
+	// Check if the string starts and ends with single quotes
+	if strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'") {
+		// Remove the quotes from the beginning and end
+		s = s[1 : len(s)-1]
+	}
+	return s
 }

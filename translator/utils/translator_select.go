@@ -8,32 +8,6 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/translator/PartiQLParser/parser"
 )
 
-type Condition struct {
-	Column   string
-	Operator string
-	Value    string
-	ANDOpr   string
-	OROpr    string
-	LogicOp  string
-}
-
-type LogicalGroup struct {
-	Conditions []Condition
-	Operator   string // AND or OR
-}
-
-type SelectQueryListener struct {
-	*parser.BasePartiQLParserListener
-	Columns      []string
-	Tables       []string
-	Where        []Condition
-	OrderBy      []string
-	Limit        string
-	Offset       string
-	LogicStack   []LogicalGroup // Stack to track logical groups
-	CurrentLogic string         // Tracks current logical operator
-}
-
 func (l *SelectQueryListener) EnterExprAnd(ctx *parser.ExprAndContext) {
 	fmt.Println("Entering AND Logical Context")
 	l.CurrentLogic = "AND"
@@ -153,7 +127,7 @@ func (t *Translator) ToSpannerSelect(query string) (*SelectQueryMap, error) {
 		Offset:            selectListener.Offset,
 	}
 	// Generate Spanner query string
-	selectQueryMap.SpannerQuery, err = formSpannerQuery(selectQueryMap, whereConditions)
+	selectQueryMap.SpannerQuery, err = formSpannerSelectQuery(selectQueryMap, whereConditions)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +135,7 @@ func (t *Translator) ToSpannerSelect(query string) (*SelectQueryMap, error) {
 	return selectQueryMap, nil
 }
 
-func formSpannerQuery(selectQueryMap *SelectQueryMap, whereConditions []Condition) (string, error) {
+func formSpannerSelectQuery(selectQueryMap *SelectQueryMap, whereConditions []Condition) (string, error) {
 	spannerQuery := "SELECT "
 
 	// Construct projection columns or use * if empty
