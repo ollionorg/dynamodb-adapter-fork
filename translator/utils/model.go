@@ -51,6 +51,7 @@ type SelectQueryMap struct {
 	OrderBy           []string // Ensure OrderBy is part of this struct
 	Limit             string   // Ensure Limit is part of this struct
 	Offset            string   // Ensure Offset is part of this struct
+	Where             []Condition
 }
 
 type Clause struct {
@@ -89,4 +90,33 @@ type DeleteQueryMap struct {
 	Clauses           []Clause // List of clauses in the delete query
 	PrimaryKeys       []string // Primary keys of the table
 	ExecuteByMutation bool     // Flag to indicate if the delete should be executed by mutation
+}
+
+type InsertStatement struct {
+	Table         string
+	Columns       []string
+	Values        []string
+	OnConflict    string
+	AdditionalMap map[string]interface{} //
+}
+
+// Listener for INSERT queries.
+type InsertQueryListener struct {
+	*parser.BasePartiQLParserListener
+	InsertData InsertStatement
+}
+
+type SetClause struct {
+	Column   string
+	Operator string
+	Value    string
+}
+
+// Listener for UPDATE queries.
+type UpdateQueryListener struct {
+	*parser.BasePartiQLParserListener
+	Table      string
+	SetColumns []string // Storage for column-specific updates.
+	Where      []Condition
+	SetClauses []SetClause
 }

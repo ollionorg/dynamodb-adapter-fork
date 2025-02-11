@@ -34,3 +34,53 @@ func trimSingleQuotes(s string) string {
 	}
 	return s
 }
+
+func formSpannerSelectQuery(selectQueryMap *SelectQueryMap, whereConditions []Condition) (string, error) {
+	spannerQuery := "SELECT "
+
+	// Construct projection columns or use * if empty
+	if len(selectQueryMap.ProjectionColumns) == 0 {
+		spannerQuery += "* "
+	} else {
+		spannerQuery += strings.Join(selectQueryMap.ProjectionColumns, ", ") + " "
+	}
+
+	spannerQuery += "FROM " + selectQueryMap.Table
+
+	// Construct WHERE clause
+	if len(whereConditions) > 0 {
+		var whereClauses []string
+		for i, cond := range whereConditions {
+			clause := fmt.Sprintf("%s %s %s", cond.Column, cond.Operator, cond.Value)
+
+			// Add logical operators if it's not the first condition
+			if i > 0 {
+				if cond.ANDOpr != "" {
+					clause = cond.ANDOpr + " " + clause
+				} else if cond.OROpr != "" {
+					clause = cond.OROpr + " " + clause
+				}
+			}
+			whereClauses = append(whereClauses, clause)
+		}
+		// Join the WHERE clauses using the appropriate spacing
+		spannerQuery += " WHERE " + strings.Join(whereClauses, " ")
+	}
+
+	// Append ORDER BY clause if present
+	if len(selectQueryMap.OrderBy) > 0 {
+		spannerQuery += " ORDER BY " + strings.Join(selectQueryMap.OrderBy, ", ")
+	}
+
+	// Append LIMIT clause if present
+	if selectQueryMap.Limit != "" {
+		spannerQuery += " LIMIT " + strings.Trim(selectQueryMap.Limit, "LIMIT")
+	}
+
+	// Append OFFSET clause if present
+	if selectQueryMap.Offset != "" {
+		spannerQuery += " OFFSET " + strings.Trim(selectQueryMap.Offset, "OFFSET")
+	}
+
+	return spannerQuery, nil
+}
