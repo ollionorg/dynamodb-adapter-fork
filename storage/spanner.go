@@ -115,11 +115,15 @@ func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys 
 
 // ExecuteSpannerQuery - this will execute query on spanner database
 func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []string, isCountQuery bool, stmt spanner.Statement) ([]map[string]interface{}, error) {
+
 	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
 	}
+
 	itr := s.getSpannerClient(table).Single().WithTimestampBound(spanner.ExactStaleness(time.Second*10)).Query(ctx, stmt)
+
 	defer itr.Stop()
 	allRows := []map[string]interface{}{}
 	for {
@@ -146,6 +150,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 		}
 		allRows = append(allRows, singleRow)
 	}
+
 	return allRows, nil
 }
 
@@ -762,8 +767,16 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			return nil, errors.New("ResourceNotFoundException", k)
 		}
 
+		// Handle NULL type explicitly
+		if v == "NULL" {
+			singleRow[k] = struct {
+				NULL bool `json:"NULL"`
+			}{true}
+			continue
+		}
+
 		switch v {
-		case "STRING(MAX)":
+		case "S":
 			var s spanner.NullString
 			err := r.Column(i, &s)
 			if err != nil {
@@ -772,14 +785,8 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				}
 				return nil, errors.New("ValidationException", err, k)
 			}
-			if s.IsNull() {
-				singleRow[k] = struct {
-					NULL bool `json:"NULL"`
-				}{true}
-			} else {
-				singleRow[k] = s.StringVal
-			}
-		case "BYTES(MAX)":
+			singleRow[k] = getValueOrNull(s.IsNull(), s.StringVal)
+		case "B":
 			var s []byte
 			err := r.Column(i, &s)
 			if err != nil {
@@ -833,23 +840,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				}
 				singleRow[k] = m
 			}
-		case "INT64":
-			var s spanner.NullInt64
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if s.IsNull() {
-				singleRow[k] = struct {
-					NULL bool `json:"NULL"`
-				}{true}
-			} else {
-				singleRow[k] = s.Int64
-			}
-		case "FLOAT64":
+		case "N":
 			var s spanner.NullFloat64
 			err := r.Column(i, &s)
 			if err != nil {
@@ -859,34 +850,7 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				return nil, errors.New("ValidationException", err, k)
 
 			}
-			if s.IsNull() {
-				singleRow[k] = struct {
-					NULL bool `json:"NULL"`
-				}{true}
-			} else {
-				singleRow[k] = s.Float64
-			}
-		case "NUMERIC":
-			var s spanner.NullNumeric
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if s.IsNull() {
-				singleRow[k] = struct {
-					NULL bool `json:"NULL"`
-				}{true}
-			} else {
-				if s.Numeric.IsInt() {
-					tmp, _ := s.Numeric.Float64()
-					singleRow[k] = int64(tmp)
-				} else {
-					singleRow[k], _ = s.Numeric.Float64()
-				}
-			}
+			singleRow[k] = getValueOrNull(s.IsNull(), s.Float64)
 		case "BOOL":
 			var s spanner.NullBool
 			err := r.Column(i, &s)
@@ -897,17 +861,21 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 				return nil, errors.New("ValidationException", err, k)
 
 			}
-			if s.IsNull() {
-				singleRow[k] = struct {
-					NULL bool `json:"NULL"`
-				}{true}
-			} else {
-				singleRow[k] = s.Bool
-			}
+			singleRow[k] = getValueOrNull(s.IsNull(), s.Bool)
 		}
 	}
 
 	return singleRow, nil
+}
+
+// getValueOrNull returns the value if not null, otherwise returns a NULL JSON representation.
+func getValueOrNull(isNull bool, value interface{}) interface{} {
+	if isNull {
+		return struct {
+			NULL bool `json:"NULL"`
+		}{true}
+	}
+	return value
 }
 
 func checkInifinty(value float64, logData interface{}) error {
