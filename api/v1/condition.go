@@ -32,6 +32,7 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/service/services"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
 var operations = map[string]string{"SET": "(?i) SET ", "DELETE": "(?i) DELETE ", "ADD": "(?i) ADD ", "REMOVE": "(?i) REMOVE "}
@@ -177,38 +178,38 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 				case []string: // String Set
 					if strSlice, ok := oldRes[key].([]string); ok {
 						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
-							resp[key] = append(strSlice, newValue...)
+							resp[key] = utils.RemoveDuplicatesString(append(strSlice, newValue...))
 						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
 							resp[key] = removeFromSlice(strSlice, newValue)
 						} else {
-							resp[key] = tmp
+							resp[key] = utils.RemoveDuplicatesString(newValue) // Ensure uniqueness even in replace
 						}
 					} else {
-						resp[key] = tmp
+						resp[key] = utils.RemoveDuplicatesString(newValue)
 					}
 				case []float64: // Number Set
 					if floatSlice, ok := oldRes[key].([]float64); ok {
 						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
-							resp[key] = append(floatSlice, newValue...)
+							resp[key] = utils.RemoveDuplicatesFloat(append(floatSlice, newValue...))
 						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
 							resp[key] = removeFromSlice(floatSlice, newValue)
 						} else {
-							resp[key] = tmp
+							resp[key] = utils.RemoveDuplicatesFloat(newValue)
 						}
 					} else {
-						resp[key] = tmp
+						resp[key] = utils.RemoveDuplicatesFloat(newValue)
 					}
 				case [][]byte: // Binary Set
 					if byteSlice, ok := oldRes[key].([][]byte); ok {
 						if strings.Contains(updateAtrr.UpdateExpression, "ADD") {
-							resp[key] = append(byteSlice, newValue...)
+							resp[key] = utils.RemoveDuplicatesByteSlice(append(byteSlice, newValue...))
 						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
 							resp[key] = removeFromByteSlice(byteSlice, newValue)
 						} else {
-							resp[key] = tmp
+							resp[key] = utils.RemoveDuplicatesByteSlice(newValue)
 						}
 					} else {
-						resp[key] = tmp
+						resp[key] = utils.RemoveDuplicatesByteSlice(newValue)
 					}
 				default:
 					resp[key] = tmp
