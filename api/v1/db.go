@@ -507,9 +507,7 @@ func Scan(c *gin.Context) {
 					c.JSON(errors.HTTPResponse(err, "LastEvaluatedKeyChangeError"))
 				}
 			}
-			jsonData, err := json.Marshal(res)
-			if err != nil {
-			}
+			jsonData, _ := json.Marshal(res)
 			c.JSON(http.StatusOK, json.RawMessage(jsonData))
 		} else {
 			c.JSON(errors.HTTPResponse(err, meta))

@@ -37,7 +37,6 @@ import (
 var operations = map[string]string{"SET": "(?i) SET ", "DELETE": "(?i) DELETE ", "ADD": "(?i) ADD ", "REMOVE": "(?i) REMOVE "}
 var byteSliceType = reflect.TypeOf([]byte(nil))
 var (
-	listAppendRegex       = regexp.MustCompile(`list_append\((.*?),\s*(.*?)\)`)
 	listRegex             = regexp.MustCompile(`list_append\(([^,]+),\s*([^\)]+)\)`)
 	listIndexRegex        = regexp.MustCompile(`(\w+)\[(\d+)\]`)
 	listUpdateAppendRegex = regexp.MustCompile(`(?i)list_append\(([^)]+),\s*(:\w+)\)`)
@@ -345,46 +344,6 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 	default:
 	}
 	return nil, nil, nil
-}
-
-func handleListAppend(ctx context.Context, operation string, updateAttr models.UpdateAttr, oldRes map[string]interface{}) (map[string]interface{}, map[string]interface{}, error) {
-	// Extract target attribute and values from operation
-	matches := listAppendRegex.FindStringSubmatch(operation)
-	if len(matches) < 3 {
-		return nil, nil, fmt.Errorf("invalid list_append syntax: %s", operation)
-	}
-
-	targetAttribute := strings.TrimSpace(matches[1])
-	newValueKey := strings.TrimSpace(matches[2])
-
-	// Get current value of the list from the database
-	currentList, exists := oldRes[targetAttribute].([]interface{})
-	if !exists {
-		currentList = []interface{}{} // Initialize as empty list if not present
-	}
-
-	// Retrieve new values to append
-	newValues, ok := updateAttr.ExpressionAttributeMap[newValueKey].([]interface{})
-	if !ok {
-		// If it's not a list, treat the new value as a single element to append
-		newValue, ok := updateAttr.ExpressionAttributeMap[newValueKey].(interface{})
-		if !ok {
-			return nil, nil, fmt.Errorf("new value must be a list or a single value: %v", newValueKey)
-		}
-		newValues = []interface{}{newValue} // Wrap it in a list
-	}
-
-	// Append new values to the current list
-	updatedList := append(currentList, newValues...)
-
-	// Update the database
-	updateAttr.PrimaryKeyMap[targetAttribute] = updatedList
-
-	// Return updated result
-	result := map[string]interface{}{
-		targetAttribute: updatedList,
-	}
-	return result, map[string]interface{}{targetAttribute: updatedList}, nil
 }
 
 // UpdateExpression performs an expression
