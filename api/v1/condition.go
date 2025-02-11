@@ -180,6 +180,8 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 							resp[key] = append(strSlice, newValue...)
 						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
 							resp[key] = removeFromSlice(strSlice, newValue)
+						} else {
+							resp[key] = tmp
 						}
 					} else {
 						resp[key] = tmp
@@ -190,6 +192,8 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 							resp[key] = append(floatSlice, newValue...)
 						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
 							resp[key] = removeFromSlice(floatSlice, newValue)
+						} else {
+							resp[key] = tmp
 						}
 					} else {
 						resp[key] = tmp
@@ -200,6 +204,8 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 							resp[key] = append(byteSlice, newValue...)
 						} else if strings.Contains(updateAtrr.UpdateExpression, "DELETE") {
 							resp[key] = removeFromByteSlice(byteSlice, newValue)
+						} else {
+							resp[key] = tmp
 						}
 					} else {
 						resp[key] = tmp
