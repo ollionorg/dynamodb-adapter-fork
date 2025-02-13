@@ -1,6 +1,8 @@
 package translator
 
 import (
+	"fmt"
+
 	"github.com/antlr4-go/antlr/v4"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/translator/PartiQLParser/parser"
 )
@@ -71,7 +73,7 @@ func (t *Translator) ToSpannerUpdate(query string) (*UpdateQueryMap, error) {
 		updateQueryMap.UpdateSetValues = append(updateQueryMap.UpdateSetValues, UpdateSetValue{
 			Column:   clause.Column,
 			Operator: clause.Operator,
-			Value:    trimSingleQuotes(clause.Value),
+			Value:    clause.Value,
 		})
 	}
 	if len(updateListener.Where) > 0 {
@@ -79,9 +81,52 @@ func (t *Translator) ToSpannerUpdate(query string) (*UpdateQueryMap, error) {
 			updateQueryMap.Clauses = append(updateQueryMap.Clauses, Clause{
 				Column:   updateListener.Where[i].Column,
 				Operator: updateListener.Where[i].Operator,
-				Value:    trimSingleQuotes(updateListener.Where[i].Value),
+				Value:    updateListener.Where[i].Value,
 			})
 		}
 	}
+	updateQueryMap.SpannerQuery = formSpannerUpdateQuery(updateQueryMap)
 	return updateQueryMap, nil
+}
+
+func formSpannerUpdateQuery(updateQueryMap *UpdateQueryMap) string {
+	return "UPDATE " + updateQueryMap.Table + buildSetValues(updateQueryMap.UpdateSetValues) + buildWhereClause(updateQueryMap.Clauses) + ";"
+}
+
+func buildSetValues(updateSetValues []UpdateSetValue) string {
+	setValues := ""
+	for _, val := range updateSetValues {
+		column := "`" + val.Column + "`"
+		value := val.Value
+
+		if setValues != "" {
+			setValues += " , "
+		}
+		setValues += fmt.Sprintf("%s = %s", column, value)
+	}
+	if setValues != "" {
+		setValues = " SET " + setValues
+	}
+	return setValues
+}
+
+func buildWhereClause(clauses []Clause) string {
+	whereClause := ""
+	for _, val := range clauses {
+		column := "`" + val.Column + "`"
+		value := val.Value
+
+		if val.Operator == "IN" {
+			value = fmt.Sprintf("UNNEST(%s)", val.Value)
+		}
+		if whereClause != "" {
+			whereClause += " AND "
+		}
+		whereClause += fmt.Sprintf("%s %s %s", column, val.Operator, value)
+	}
+
+	if whereClause != "" {
+		whereClause = " WHERE " + whereClause
+	}
+	return whereClause
 }

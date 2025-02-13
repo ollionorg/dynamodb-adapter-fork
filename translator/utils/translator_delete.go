@@ -1,8 +1,6 @@
 package translator
 
 import (
-	"fmt"
-
 	"github.com/antlr4-go/antlr/v4"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/translator/PartiQLParser/parser"
 )
@@ -37,9 +35,6 @@ func (t *Translator) ToSpannerDelete(query string) (*DeleteQueryMap, error) {
 
 	// Parse the input query
 	antlr.ParseTreeWalkerDefault.Walk(deleteListener, p.Root())
-
-	// Debug output for table name
-	fmt.Println("Table identified:", deleteListener.Table)
 	deleteQueryMap.Table = deleteListener.Table
 
 	// Populate deleteQueryMap.Clauses from deleteListener.Where
@@ -52,9 +47,14 @@ func (t *Translator) ToSpannerDelete(query string) (*DeleteQueryMap, error) {
 			})
 		}
 	}
-
-	// Optionally check if any clauses were added
-	fmt.Printf("Clauses collected: %v\n", deleteQueryMap.Clauses)
-
+	deleteQueryMap.PartiQL = query
+	deleteQueryMap.SpannerQuery = createSpannerDeleteQuery(deleteListener.Table, deleteQueryMap.Clauses)
 	return deleteQueryMap, nil
+}
+
+// createSpannerDeleteQuery generates the Spanner delete query using Parsed information.
+//
+// It takes the table name and an array of clauses as input and returns the generated query string.
+func createSpannerDeleteQuery(table string, clauses []Clause) string {
+	return "DELETE FROM " + table + buildWhereClause(clauses) + ";"
 }

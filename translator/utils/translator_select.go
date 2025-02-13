@@ -50,7 +50,7 @@ func (l *SelectQueryListener) EnterPredicateComparison(ctx *parser.PredicateComp
 	condition := Condition{
 		Column:   strings.ReplaceAll(column, `'`, ""),
 		Operator: operator,
-		Value:    strings.ReplaceAll(value, `'`, `"`),
+		Value:    value,
 	}
 
 	if len(l.LogicStack) > 0 {

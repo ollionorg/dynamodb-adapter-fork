@@ -32,7 +32,7 @@ func TestToSpannerInsert(t *testing.T) {
 	// Expected results
 	expectedTable := "employee"
 	expectedColumns := []string{"emp_id", "first_name", "last_name", "age", "address"}
-	expectedValues := []string{"10", "Marc", "Richards1", "10", "Shamli"}
+	expectedValues := []string{"10", "'Marc'", "'Richards1'", "10", "'Shamli'"}
 
 	// Assertions for Table
 	assert.Equal(t, expectedTable, insertStatement.Table)

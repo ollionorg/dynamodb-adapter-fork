@@ -95,12 +95,27 @@ func (t *Translator) ToSpannerInsert(query string) (*InsertStatement, error) {
 
 	insertStatement.Table = insertListener.InsertData.Table
 	for _, column := range insertListener.InsertData.Columns {
-		insertStatement.Columns = append(insertStatement.Columns, trimSingleQuotes(column))
+		col := trimSingleQuotes(column)
+		insertStatement.Columns = append(insertStatement.Columns, col)
 	}
-	for _, val := range insertListener.InsertData.Values {
-		insertStatement.Values = append(insertStatement.Values, trimSingleQuotes(val))
-	}
+	insertStatement.Values = append(insertStatement.Values, insertListener.InsertData.Values...)
 	insertStatement.AdditionalMap = insertListener.InsertData.AdditionalMap
 	insertStatement.OnConflict = insertListener.InsertData.OnConflict
+
+	insertStatement.PartiQL = query
+	insertStatement.SpannerQuery = getSpannerInsertQuery(insertStatement)
 	return insertStatement, nil
+}
+
+func getSpannerInsertQuery(data *InsertStatement) string {
+	var valuePlaceholders []string
+
+	for _, val := range data.Columns {
+		valuePlaceholders = append(valuePlaceholders, "@"+val)
+	}
+
+	columnStr := "(" + strings.Join(data.Columns, ", ") + ")"
+	valueStr := "(" + strings.Join(valuePlaceholders, ", ") + ")"
+
+	return "INSERT OR UPDATE INTO " + data.Table + " " + columnStr + " " + "VALUES" + " " + valueStr + ";"
 }

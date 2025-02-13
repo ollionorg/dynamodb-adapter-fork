@@ -64,7 +64,7 @@ func formSpannerSelectQuery(selectQueryMap *SelectQueryMap, whereConditions []Co
 			whereClauses = append(whereClauses, clause)
 		}
 		// Join the WHERE clauses using the appropriate spacing
-		spannerQuery += " WHERE " + strings.Join(whereClauses, " ")
+		spannerQuery += " WHERE " + strings.Join(whereClauses, " AND ")
 	}
 
 	// Append ORDER BY clause if present

@@ -7,11 +7,7 @@ import (
 
 type Translator struct {
 	Logger *zap.Logger
-	// TableConfig     *tableConfig.TableConfig
-	KeyspaceFlatter bool
-	UseRowTimestamp bool
-	UseRowTTL       bool
-	Debug           bool
+	Debug  bool
 }
 
 type Condition struct {
@@ -62,7 +58,8 @@ type Clause struct {
 }
 
 type UpdateQueryMap struct {
-	PartiQLQuery    string           // Original query string
+	PartiQLQuery    string // Original query string
+	SpannerQuery    string
 	QueryType       string           // Type of the query (e.g., UPDATE)
 	Table           string           // Table involved in the query
 	UpdateSetValues []UpdateSetValue // Values to be updated
@@ -84,7 +81,8 @@ type DeleteQueryListener struct {
 }
 
 type DeleteQueryMap struct {
-	PartiQL           string   // Original query string
+	PartiQL           string // Original query string
+	SpannerQuery      string
 	QueryType         string   // Type of the query (e.g., DELETE)
 	Table             string   // Table involved in the query
 	Clauses           []Clause // List of clauses in the delete query
@@ -93,6 +91,8 @@ type DeleteQueryMap struct {
 }
 
 type InsertStatement struct {
+	PartiQL       string // Original query string
+	SpannerQuery  string
 	Table         string
 	Columns       []string
 	Values        []string
