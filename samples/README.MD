@@ -122,7 +122,7 @@ After building the project, start the DynamoDB Adapter by running the following 
 
 Follow these steps to set up your DynamoDB Adapter environment
 and perform necessary operations using the `employee_table`.
-
+Let me know if you need further clarification or assistance!
 
 
 
