@@ -57,7 +57,7 @@ type Clause struct {
 	IsPrimaryKey bool
 }
 
-type UpdateQueryMap struct {
+type DeleteUpdateQueryMap struct {
 	PartiQLQuery    string // Original query string
 	SpannerQuery    string
 	QueryType       string           // Type of the query (e.g., UPDATE)

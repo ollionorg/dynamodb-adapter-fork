@@ -51,7 +51,7 @@ var (
 		spannerIndexName STRING(MAX),
 		actualTable STRING(MAX),
 		spannerDataType STRING(MAX)
-	) PRIMARY KEY (tableName, column);`
+	) PRIMARY KEY (tableName, column)`
 )
 
 // Entry point for the application
@@ -146,7 +146,7 @@ func generateTableDDL(tableName string, client *dynamodb.Client, limit int32) st
 	}())
 
 	return fmt.Sprintf(
-		"CREATE TABLE %s (\n\t%s\n) %s;",
+		"CREATE TABLE %s (\n\t%s\n) %s",
 		tableName, strings.Join(columns, ",\n\t"), primaryKey,
 	)
 }

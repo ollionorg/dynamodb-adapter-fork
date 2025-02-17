@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	translator "github.com/cloudspannerecosystem/dynamodb-adapter/translator/utils"
+
 	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
@@ -890,4 +892,34 @@ func checkInifinty(value float64, logData interface{}) error {
 	}
 
 	return nil
+}
+
+func (s *Storage) InsertUpdateOrDeleteStatement(ctx context.Context, query *translator.DeleteUpdateQueryMap) (map[string]interface{}, error) {
+	_, err := s.getSpannerClient(query.Table).ReadWriteTransactionWithOptions(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		_, err := txn.Update(ctx, *buildStmt(query))
+		if err != nil {
+			return err
+		}
+		return nil
+	}, spanner.TransactionOptions{CommitOptions: s.BuildCommitOptions()})
+
+	return nil, err
+}
+
+// buildStmt returns a Statement with the given SQL and Params.
+func buildStmt(query *translator.DeleteUpdateQueryMap) *spanner.Statement {
+	return &spanner.Statement{
+		SQL: query.SpannerQuery,
+		// Params: query.Params,
+	}
+}
+
+var defaultCommitDelay = time.Duration(0) * time.Millisecond
+
+// BuildCommitOptions returns the commit options for Spanner transactions.
+func (s Storage) BuildCommitOptions() spanner.CommitOptions {
+	commitDelay := defaultCommitDelay
+	return spanner.CommitOptions{
+		MaxCommitDelay: &commitDelay,
+	}
 }
