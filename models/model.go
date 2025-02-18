@@ -302,6 +302,7 @@ type ExecuteStatement struct {
 	ReturnValues string                     `json:"ReturnValues"`
 	Statement    string                     `json:"Statement"`
 	TableName    string                     `json:"TableName"`
+	AttrParams   []interface{}              `json:"TableName"`
 }
 
 type ExecuteStatementQuery struct {

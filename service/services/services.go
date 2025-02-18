@@ -18,6 +18,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"regexp"
 	"strconv"
@@ -598,15 +599,15 @@ func ExecuteStatement(ctx context.Context, executeStatement models.ExecuteStatem
 
 	// Regular expressions to match the beginning of the query
 	selectRegex := regexp.MustCompile(`(?i)^\s*SELECT`)
-	// insertRegex := regexp.MustCompile(`(?i)^\s*INSERT`)
+	insertRegex := regexp.MustCompile(`(?i)^\s*INSERT`)
 	updateRegex := regexp.MustCompile(`(?i)^\s*UPDATE`)
 	deleteRegex := regexp.MustCompile(`(?i)^\s*DELETE`)
 
 	switch {
 	case selectRegex.MatchString(queryUpper):
 		return ExecuteStatementForSelect(ctx, executeStatement)
-	// case insertRegex.MatchString(queryUpper):
-	// 	return ExecuteStatementForInsert(ctx, executeStatement)
+	case insertRegex.MatchString(queryUpper):
+		return ExecuteStatementForInsert(ctx, executeStatement)
 	case updateRegex.MatchString(queryUpper):
 		return ExecuteStatementForUpdate(ctx, executeStatement)
 	case deleteRegex.MatchString(queryUpper):
@@ -622,6 +623,17 @@ func parsePartiQlToSpannerforSelect(ctx context.Context, executeStatement models
 	var err error
 
 	translatorObj := translator.Translator{}
+	queryStmt := executeStatement.Statement
+
+	for i, val := range executeStatement.Parameters {
+		if val.S != nil {
+			stmt.Params[fmt.Sprintf("val%d", i)] = val.S
+			queryStmt = strings.Replace(queryStmt, "?", "@val"+strconv.Itoa(i), 1)
+		} else if val.N != nil {
+			stmt.Params[fmt.Sprintf("val%d", i)] = val.N
+			queryStmt = strings.Replace(queryStmt, "?", "@val"+strconv.Itoa(i), 1)
+		}
+	}
 
 	queryMap, err := translatorObj.ToSpannerSelect(executeStatement.Statement)
 	if err != nil {
@@ -635,6 +647,7 @@ func ExecuteStatementForSelect(ctx context.Context, executeStatement models.Exec
 	res, err := parsePartiQlToSpannerforSelect(ctx, executeStatement)
 	if err != nil {
 		return nil, err
+
 	}
 	resp, err := storage.GetStorageInstance().ExecuteSpannerQuery(ctx, executeStatement.TableName, []string{}, false, res)
 	if err != nil {
@@ -847,6 +860,50 @@ func parsePartQlToSpannerUpdate(ctx context.Context, executeStmnt models.Execute
 // 	return primaryKeyMap, nil
 // }
 
+func convertType(columnName string, val interface{}, columntype string) (interface{}, error) {
+	switch columntype {
+	case "STRING(MAX)":
+		// Ensure the value is a string
+		return fmt.Sprintf("%v", val), nil
+
+	case "INT64":
+		// Convert to int64
+		intValue, err := strconv.ParseInt(fmt.Sprintf("%v", val), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("error converting to int64: %v", err)
+		}
+		return intValue, nil
+
+	case "FLOAT64":
+		// Convert to float64
+		floatValue, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+		if err != nil {
+			return nil, fmt.Errorf("error converting to float64: %v", err)
+		}
+		return floatValue, nil
+
+	case "NUMERIC":
+		// Treat same as FLOAT64 here or use a specific library for decimal types
+		numValue, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
+		if err != nil {
+			return nil, fmt.Errorf("error converting to numeric: %v", err)
+		}
+		return numValue, nil
+
+	case "BOOL":
+		// Convert to boolean
+		boolValue, err := strconv.ParseBool(fmt.Sprintf("%v", val))
+		if err != nil {
+			return nil, fmt.Errorf("error converting to bool: %v", err)
+		}
+		return boolValue, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported data type: %s", columntype)
+	}
+
+}
+
 // func convertType(pkeyMap map[string]interface{}, colDLL map[string]string) (map[string]interface{}, error) {
 // 	for k, val := range pkeyMap {
 // 		v, ok := colDLL[k]
@@ -941,36 +998,61 @@ func parsePartQlToSpannerUpdate(ctx context.Context, executeStmnt models.Execute
 //		return newMap, nil
 //	}
 
-// func ExecuteStatementForInsert(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
-// 	res, err := parsePartQlToSpannerInsert(ctx, executeStatement)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+func ExecuteStatementForInsert(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
+	// res, err := parsePartQlToSpannerInsert(ctx, executeStatement)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	newMap := make(map[string]interface{})
+	translatorObj := translator.Translator{}
+	parsedQueryObj, err := translatorObj.ToSpannerInsert(executeStatement.Statement)
+	if err != nil {
+		return nil, err
+	}
+	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(executeStatement.TableName)]
+	if !ok {
+		return nil, errors.New("ResourceNotFoundException", executeStatement.TableName)
+	}
+	for i, col := range parsedQueryObj.Columns {
+		columntype := colDLL[col]
+		newMap[col], err = convertType(col, parsedQueryObj.Values[i], columntype)
+		return nil, err
 
-// 	result, err := Put(ctx, executeStatement.TableName, res, nil, "", nil, nil)
-// 	if err != nil {
-// 		return result, err
-// 	}
-// 	return result, nil
-// }
+	}
+	result, err := Put(ctx, executeStatement.TableName, newMap, nil, "", nil, nil)
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}
 
 func ExecuteStatementForUpdate(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
-	primaryKeyMap, setValueMap, err := parsePartQlToSpannerUpdate(ctx, executeStatement)
+	// primaryKeyMap, setValueMap, err := parsePartQlToSpannerUpdate(ctx, executeStatement)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	translatorObj := translator.Translator{}
+	parsedQueryObj, err := translatorObj.ToSpannerUpdate(executeStatement.Statement)
 	if err != nil {
 		return nil, err
+	}
+	res, err := storage.GetStorageInstance().InsertUpdateOrDeleteStatement(ctx, parsedQueryObj)
+	if err != nil {
+		return res, err
 	}
 	// fetch old row to modify the column value
-	oldRes, err := GetWithProjection(ctx, executeStatement.TableName, primaryKeyMap, "", nil)
-	if err != nil {
-		return nil, err
-	}
-	for key, val := range setValueMap {
-		oldRes[key] = val
-	}
-	_, err = Put(ctx, executeStatement.TableName, oldRes, nil, "", nil, nil)
-	if err != nil {
-		return nil, err
-	}
+	// oldRes, err := GetWithProjection(ctx, executeStatement.TableName, primaryKeyMap, "", nil)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// for key, val := range setValueMap {
+	// 	oldRes[key] = val
+	// }
+
+	// _, err = Put(ctx, executeStatement.TableName, oldRes, nil, "", nil, nil)
+	// if err != nil {
+	// 	return nil, err
+	// }
 	return nil, err
 }
 
@@ -982,9 +1064,12 @@ func ExecuteStatementForDelete(ctx context.Context, executeStatement models.Exec
 		return nil, err
 	}
 
-	storage.GetStorageInstance().InsertUpdateOrDeleteStatement(ctx, parsedQueryObj)
+	res, err := storage.GetStorageInstance().InsertUpdateOrDeleteStatement(ctx, parsedQueryObj)
+	if err != nil {
+		return nil, err
+	}
 
-	return nil, nil
+	return res, nil
 }
 
 // func ExecuteStatementForDelete(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {

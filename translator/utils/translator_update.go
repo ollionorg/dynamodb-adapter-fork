@@ -114,6 +114,9 @@ func buildWhereClause(clauses []Clause) string {
 	whereClause := ""
 	for _, val := range clauses {
 		column := "`" + val.Column + "`"
+		if val.Value == questionMarkLiteral {
+			val.Value = "@" + val.Column
+		}
 		value := val.Value
 
 		if val.Operator == "IN" {
