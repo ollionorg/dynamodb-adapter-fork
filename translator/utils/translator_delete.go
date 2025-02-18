@@ -47,6 +47,7 @@ func (t *Translator) ToSpannerDelete(query string) (*DeleteUpdateQueryMap, error
 			})
 		}
 	}
+	deleteQueryMap.QueryType = "DELETE"
 	deleteQueryMap.PartiQLQuery = query
 	deleteQueryMap.SpannerQuery = createSpannerDeleteQuery(deleteListener.Table, deleteQueryMap.Clauses)
 	return deleteQueryMap, nil
