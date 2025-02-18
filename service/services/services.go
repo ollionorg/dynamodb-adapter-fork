@@ -1066,6 +1066,38 @@ func ExecuteStatementForUpdate(ctx context.Context, executeStatement models.Exec
 	if err != nil {
 		return nil, err
 	}
+	paramMap := make(map[string]interface{})
+	if len(executeStatement.Parameters) > 0 {
+		j := len(parsedQueryObj.UpdateSetValues)
+		for i, val := range parsedQueryObj.UpdateSetValues {
+			colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(executeStatement.TableName)]
+			if !ok {
+				return nil, fmt.Errorf("ResourceNotFoundException: %s", executeStatement.TableName)
+			}
+			convertedValue, err := convertType(val.Column, executeStatement.AttrParams[i], colDLL[val.Column])
+			if err != nil {
+				return nil, err
+			}
+			paramMap[val.Column] = convertedValue
+
+		}
+		for _, val := range parsedQueryObj.Clauses {
+			colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(executeStatement.TableName)]
+			if !ok {
+				return nil, fmt.Errorf("ResourceNotFoundException: %s", executeStatement.TableName)
+			}
+			convertedValue, err := convertType(val.Column, executeStatement.AttrParams[j], colDLL[val.Column])
+			if err != nil {
+				return nil, err
+			}
+			paramMap[val.Column] = convertedValue
+			j++
+		}
+		parsedQueryObj.Params = paramMap
+	}
+	a, _ := json.Marshal(parsedQueryObj)
+	fmt.Println("hello-->")
+	fmt.Println(string(a))
 	res, err := storage.GetStorageInstance().InsertUpdateOrDeleteStatement(ctx, parsedQueryObj)
 	if err != nil {
 		return res, err
@@ -1092,6 +1124,21 @@ func ExecuteStatementForDelete(ctx context.Context, executeStatement models.Exec
 	parsedQueryObj, err := translatorObj.ToSpannerDelete(executeStatement.Statement)
 	if err != nil {
 		return nil, err
+	}
+	newMap := make(map[string]interface{})
+	if len(executeStatement.AttrParams) > 0 {
+		for i, val := range parsedQueryObj.Clauses {
+			colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(executeStatement.TableName)]
+			if !ok {
+				return nil, fmt.Errorf("ResourceNotFoundException: %s", executeStatement.TableName)
+			}
+			convertedValue, err := convertType(val.Column, executeStatement.AttrParams[i], colDLL[val.Column])
+			if err != nil {
+				return nil, err
+			}
+			newMap[val.Column] = convertedValue
+		}
+		parsedQueryObj.Params = newMap
 	}
 
 	res, err := storage.GetStorageInstance().InsertUpdateOrDeleteStatement(ctx, parsedQueryObj)

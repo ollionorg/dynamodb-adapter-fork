@@ -97,6 +97,9 @@ func buildSetValues(updateSetValues []UpdateSetValue) string {
 	setValues := ""
 	for _, val := range updateSetValues {
 		column := "`" + val.Column + "`"
+		if val.Value == questionMarkLiteral {
+			val.Value = "@" + val.Column
+		}
 		value := val.Value
 
 		if setValues != "" {

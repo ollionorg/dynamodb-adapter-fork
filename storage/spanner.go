@@ -910,8 +910,8 @@ func (s *Storage) InsertUpdateOrDeleteStatement(ctx context.Context, query *tran
 // buildStmt returns a Statement with the given SQL and Params.
 func buildStmt(query *translator.DeleteUpdateQueryMap) *spanner.Statement {
 	return &spanner.Statement{
-		SQL: query.SpannerQuery,
-		// Params: query.Params,
+		SQL:    query.SpannerQuery,
+		Params: query.Params,
 	}
 }
 
