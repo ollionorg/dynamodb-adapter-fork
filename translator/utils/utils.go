@@ -108,5 +108,5 @@ func formSpannerSelectQuery(selectQueryMap *SelectQueryMap, whereConditions []Co
 		spannerQuery += " OFFSET " + trimmedOffset
 	}
 
-	return spannerQuery, nil
+	return spannerQuery + ";", nil
 }

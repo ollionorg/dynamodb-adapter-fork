@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"regexp"
@@ -123,7 +124,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
 	}
-
+	fmt.Println("hello 3", stmt.SQL)
 	itr := s.getSpannerClient(table).Single().WithTimestampBound(spanner.ExactStaleness(time.Second*10)).Query(ctx, stmt)
 
 	defer itr.Stop()

@@ -59,6 +59,8 @@ func RouteRequest(c *gin.Context) {
 		Scan(c)
 	case "UpdateItem":
 		Update(c)
+	case "ExecuteStatement":
+		ExecuteStatement(c)
 	default:
 		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of "+amzTarget).
 			HTTPResponse("X-Amz-Target Header not supported"))

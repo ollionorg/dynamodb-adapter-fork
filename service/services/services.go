@@ -18,6 +18,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"regexp"
@@ -597,6 +598,7 @@ func ExecuteStatement(ctx context.Context, executeStatement models.ExecuteStatem
 	query := strings.TrimSpace(executeStatement.Statement) // Remove any leading or trailing whitespace
 	queryUpper := strings.ToUpper(query)
 
+	fmt.Println("hello 1")
 	// Regular expressions to match the beginning of the query
 	selectRegex := regexp.MustCompile(`(?i)^\s*SELECT`)
 	insertRegex := regexp.MustCompile(`(?i)^\s*INSERT`)
@@ -649,6 +651,7 @@ func ExecuteStatementForSelect(ctx context.Context, executeStatement models.Exec
 		return nil, err
 
 	}
+	fmt.Println("hello 2", res)
 	resp, err := storage.GetStorageInstance().ExecuteSpannerQuery(ctx, executeStatement.TableName, []string{}, false, res)
 	if err != nil {
 		return nil, err
@@ -862,9 +865,9 @@ func parsePartQlToSpannerUpdate(ctx context.Context, executeStmnt models.Execute
 
 func convertType(columnName string, val interface{}, columntype string) (interface{}, error) {
 	switch columntype {
-	case "STRING(MAX)":
+	case "STRING(MAX)", "S":
 		// Ensure the value is a string
-		return fmt.Sprintf("%v", val), nil
+		return trimSingleQuotes(fmt.Sprintf("%v", val)), nil
 
 	case "INT64":
 		// Convert to int64
@@ -874,7 +877,7 @@ func convertType(columnName string, val interface{}, columntype string) (interfa
 		}
 		return intValue, nil
 
-	case "FLOAT64":
+	case "FLOAT64", "N":
 		// Convert to float64
 		floatValue, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
 		if err != nil {
@@ -999,33 +1002,60 @@ func convertType(columnName string, val interface{}, columntype string) (interfa
 //	}
 
 func ExecuteStatementForInsert(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
-	// res, err := parsePartQlToSpannerInsert(ctx, executeStatement)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	newMap := make(map[string]interface{})
 	translatorObj := translator.Translator{}
 	parsedQueryObj, err := translatorObj.ToSpannerInsert(executeStatement.Statement)
 	if err != nil {
 		return nil, err
 	}
+
 	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(executeStatement.TableName)]
 	if !ok {
-		return nil, errors.New("ResourceNotFoundException", executeStatement.TableName)
+		return nil, fmt.Errorf("ResourceNotFoundException: %s", executeStatement.TableName)
 	}
-	for i, col := range parsedQueryObj.Columns {
-		columntype := colDLL[col]
-		newMap[col], err = convertType(col, parsedQueryObj.Values[i], columntype)
-		return nil, err
 
+	newMap := make(map[string]interface{})
+	attrParams := executeStatement.AttrParams
+
+	columns := parsedQueryObj.Columns
+	values := parsedQueryObj.Values
+
+	// Determine the number of parameters to use and iterate accordingly
+	var paramsCount int
+	if len(attrParams) > 0 {
+		paramsCount = len(attrParams)
+	} else {
+		paramsCount = len(columns)
 	}
+
+	for i := 0; i < paramsCount; i++ {
+		var value interface{}
+		if len(attrParams) > 0 {
+			value = attrParams[i]
+		} else {
+			value = values[i]
+		}
+
+		columnName := columns[i]
+		columnType := colDLL[columnName]
+
+		convertedValue, err := convertType(columnName, value, columnType)
+		if err != nil {
+			return nil, err
+		}
+		newMap[columnName] = convertedValue
+	}
+
+	// Optional: Log the newMap contents if needed
+	if jsonData, err := json.Marshal(newMap); err == nil {
+		fmt.Println(string(jsonData))
+	}
+
 	result, err := Put(ctx, executeStatement.TableName, newMap, nil, "", nil, nil)
 	if err != nil {
 		return result, err
 	}
 	return result, nil
 }
-
 func ExecuteStatementForUpdate(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
 	// primaryKeyMap, setValueMap, err := parsePartQlToSpannerUpdate(ctx, executeStatement)
 	// if err != nil {
@@ -1154,3 +1184,12 @@ func ExecuteStatementForDelete(ctx context.Context, executeStatement models.Exec
 
 // 	return columnNames, nil
 // }
+
+func trimSingleQuotes(s string) string {
+	// Check if the string starts and ends with single quotes
+	if strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'") {
+		// Remove the quotes from the beginning and end
+		s = s[1 : len(s)-1]
+	}
+	return s
+}

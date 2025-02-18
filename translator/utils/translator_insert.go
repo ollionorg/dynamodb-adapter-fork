@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/antlr4-go/antlr/v4"
@@ -88,6 +89,8 @@ func (t *Translator) ToSpannerInsert(query string) (*InsertStatement, error) {
 	insertListener := &InsertQueryListener{}
 	insertStatement := &InsertStatement{}
 	// Lexer and parser setup
+	query = strings.ReplaceAll(query, `?`, `'?'`)
+	fmt.Println("query-->", query)
 	lexer := parser.NewPartiQLLexer(antlr.NewInputStream(query))
 	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
 	p := parser.NewPartiQLParser(stream)
