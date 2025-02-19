@@ -683,12 +683,6 @@ func ExecuteStatement(c *gin.Context) {
 	if err := c.ShouldBindJSON(&execStmt); err != nil {
 		c.JSON(errors.New("ValidationException", err).HTTPResponse(execStmt))
 	} else {
-
-		// meta.AttrMap, err = ConvertDynamoToMap(execStmt.TableName, execStmt.Parameters)
-		// if err != nil {
-		// 	c.JSON(errors.New("ValidationException", err).HTTPResponse(meta))
-		// 	return
-		// }
 		execStmt.TableName = extractTableName(execStmt.Statement)
 		for _, val := range execStmt.Parameters {
 			execStmt.AttrParams = append(execStmt.AttrParams, convertFrom(val, execStmt.TableName))

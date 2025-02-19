@@ -123,6 +123,5 @@ func (t *Translator) ToSpannerSelect(query string) (*SelectQueryMap, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return selectQueryMap, nil
 }

@@ -624,11 +624,14 @@ func parsePartiQlToSpannerforSelect(ctx context.Context, executeStatement models
 	var err error
 
 	translatorObj := translator.Translator{}
-	queryStmt := executeStatement.Statement
 
 	queryMap, err := translatorObj.ToSpannerSelect(executeStatement.Statement)
 	if err != nil {
 		return stmt, err
+	}
+	queryStmt := queryMap.SpannerQuery
+	if executeStatement.Limit != 0 {
+		queryMap.Limit = strconv.FormatInt(executeStatement.Limit, 10)
 	}
 
 	for i, val := range executeStatement.Parameters {
@@ -652,6 +655,8 @@ func parsePartiQlToSpannerforSelect(ctx context.Context, executeStatement models
 			return stmt, fmt.Errorf("unsupported datatype")
 		}
 	}
+	stmt.SQL = queryMap.SpannerQuery
+	stmt.Params = paramMap
 	return stmt, nil
 }
 
