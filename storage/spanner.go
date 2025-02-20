@@ -1123,6 +1123,11 @@ func parseDynamoDBJSON(value interface{}) interface{} {
 				return num
 			case "BOOL": // Boolean
 				return val.(bool)
+			case "NULL": // Null
+				if val.(bool) {
+					return nil
+				}
+				return value
 			case "M": // Map (nested object)
 				result := make(map[string]interface{})
 				for k, nestedVal := range val.(map[string]interface{}) {
