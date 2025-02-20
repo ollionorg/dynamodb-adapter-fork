@@ -1,11 +1,10 @@
 # Integration Tests
 
-## config.yaml
+### config.yaml
+This file defines the necessary settings for the adapter. A sample configuration might look like this:
 
-This file defines the necessary settings for the adapter.
-A sample configuration might look like this:
 
-spanner:
+    spanner:
         project_id: "my-project-id"
         instance_id: "my-instance-id"
         database_name: "my-database-name"
@@ -18,6 +17,7 @@ instance_id: The Spanner instance ID.
 database_name: The database name in Spanner.
 query_limit: Database query limit.
 dynamo_query_limit: DynamoDb query limit.
+```
 
 ## Execute tests
 
