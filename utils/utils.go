@@ -17,6 +17,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -24,6 +25,8 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
 )
+
+var listRemoveTargetRegex = regexp.MustCompile(`(.*)\[(\d+)\]`)
 
 // GetFieldNameFromConditionalExpression returns the field name from conditional expression
 func GetFieldNameFromConditionalExpression(conditionalExpression string) string {
@@ -207,4 +210,71 @@ func ConvertDynamoTypeToSpannerType(dynamoType string) string {
 	default:
 		return "STRING(MAX)"
 	}
+}
+
+// RemoveDuplicatesString removes duplicates from a []string
+func RemoveDuplicatesString(input []string) []string {
+	seen := make(map[string]struct{})
+	var result []string
+
+	for _, val := range input {
+		if _, exists := seen[val]; !exists {
+			seen[val] = struct{}{}
+			result = append(result, val)
+		}
+	}
+	return result
+}
+
+// RemoveDuplicatesFloat removes duplicates from a []float64
+func RemoveDuplicatesFloat(input []float64) []float64 {
+	seen := make(map[float64]struct{})
+	var result []float64
+
+	for _, val := range input {
+		if _, exists := seen[val]; !exists {
+			seen[val] = struct{}{}
+			result = append(result, val)
+		}
+	}
+	return result
+}
+
+// RemoveDuplicatesByteSlice removes duplicates from a [][]byte
+func RemoveDuplicatesByteSlice(input [][]byte) [][]byte {
+	seen := make(map[string]struct{})
+	var result [][]byte
+
+	for _, val := range input {
+		key := string(val) // Convert byte slice to string for map key
+		if _, exists := seen[key]; !exists {
+			seen[key] = struct{}{}
+			result = append(result, val)
+		}
+	}
+	return result
+}
+
+// parseListRemoveTarget parses a list attribute target and its index from the action value.
+// It returns the attribute name and index.
+// Example: listAttr[2]
+func ParseListRemoveTarget(target string) (string, int) {
+	matches := listRemoveTargetRegex.FindStringSubmatch(target)
+	if len(matches) == 3 {
+		index, err := strconv.Atoi(matches[2])
+		if err != nil {
+			return target, -1
+		}
+		return matches[1], index
+	}
+	return target, -1
+}
+
+// removeListElement removes an element from a list at the specified index.
+// If the index is invalid, it returns the original list.
+func RemoveListElement(list []interface{}, idx int) []interface{} {
+	if idx < 0 || idx >= len(list) {
+		return list // Return original list for invalid indices
+	}
+	return append(list[:idx], list[idx+1:]...)
 }
