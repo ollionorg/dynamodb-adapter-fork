@@ -639,7 +639,11 @@ func parsePartiQlToSpannerforSelect(ctx context.Context, executeStatement models
 			paramMap[queryMap.Where[i].Column] = *val.S
 			queryStmt = strings.Replace(queryStmt, "?", "@val"+strconv.Itoa(i), 1)
 		} else if val.N != nil {
-			paramMap[queryMap.Where[i].Column] = *val.N
+			floatVal, err := strconv.ParseFloat(*val.N, 64)
+			if err != nil {
+				return stmt, fmt.Errorf("failed to convert the string type to the float")
+			}
+			paramMap[queryMap.Where[i].Column] = floatVal
 			queryStmt = strings.Replace(queryStmt, "?", "@val"+strconv.Itoa(i), 1)
 		} else if val.BOOL != nil {
 			paramMap[queryMap.Where[i].Column] = *val.BOOL
