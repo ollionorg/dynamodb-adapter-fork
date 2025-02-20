@@ -1814,8 +1814,6 @@ func testPutItemAPI(t *testing.T) {
 			return handlerInitFunc()
 		},
 	}
-
-	fmt.Println(PutItemTestCase2)
 	tests := []apitesting.APITestCase{
 		createStatusCheckPostTestCase(PutItemTestCase1Name, "/v1", "PutItem", http.StatusBadRequest, PutItemTestCase1),
 		createStatusCheckPostTestCase(PutItemTestCase5Name, "/v1", "PutItem", http.StatusBadRequest, PutItemTestCase5),
@@ -1826,7 +1824,7 @@ func testPutItemAPI(t *testing.T) {
 		createPostTestCase(PutItemTestCase3Name, "/v1", "PutItem", PutItemTestCase3Output, PutItemTestCase3),
 		createPostTestCase(PutItemTestCase4Name, "/v1", "PutItem", PutItemTestCase4Output, PutItemTestCase4),
 		createStatusCheckPostTestCase(PutItemTestCase9Name, "/v1", "PutItem", http.StatusOK, PutItemTestCase9),
-		//	createPostTestCase(PutItemTestForListName, "/v1", "PutItem", PutItemTestForListOutput, PutItemTestForList),
+		createPostTestCase(PutItemTestForListName, "/v1", "PutItem", PutItemTestForListOutput, PutItemTestForList),
 	}
 	apitest.RunTests(t, tests)
 }
