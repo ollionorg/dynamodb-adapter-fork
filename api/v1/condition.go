@@ -236,7 +236,7 @@ func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignme
 			resp[field] = value
 		}
 
-		// Parse key-value pairs
+		// For assignment operations (SET)
 		if assignment {
 			v = strings.Split(p, " ")
 			v = deleteEmpty(v)

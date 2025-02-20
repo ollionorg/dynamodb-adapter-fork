@@ -1040,22 +1040,28 @@ var (
 				{
 					PutReq: models.BatchPutItem{
 						Item: map[string]*dynamodb.AttributeValue{
-							"emp_id":     {N: aws.String("6")},
-							"age":        {N: aws.String("60")},
-							"address":    {S: aws.String("London")},
-							"first_name": {S: aws.String("David")},
-							"last_name":  {S: aws.String("Root")},
+							"emp_id":        {N: aws.String("6")},
+							"age":           {N: aws.String("60")},
+							"address":       {S: aws.String("London")},
+							"first_name":    {S: aws.String("David")},
+							"last_name":     {S: aws.String("Root")},
+							"phone_numbers": {SS: []*string{aws.String("+1777777777"), aws.String("+1888888888")}},
+							"profile_pics":  {BS: [][]byte{[]byte("U29tZUJ5dGVzRGF0YTc="), []byte("U29tZUJ5dGVzRGF0YTg=")}},
+							"salaries":      {NS: []*string{aws.String("9000.50"), aws.String("10000.75")}},
 						},
 					},
 				},
 				{
 					PutReq: models.BatchPutItem{
 						Item: map[string]*dynamodb.AttributeValue{
-							"emp_id":     {N: aws.String("7")},
-							"age":        {N: aws.String("70")},
-							"address":    {S: aws.String("Paris")},
-							"first_name": {S: aws.String("Marc")},
-							"last_name":  {S: aws.String("Ponting")},
+							"emp_id":        {N: aws.String("7")},
+							"age":           {N: aws.String("70")},
+							"address":       {S: aws.String("Paris")},
+							"first_name":    {S: aws.String("Marc")},
+							"last_name":     {S: aws.String("Ponting")},
+							"phone_numbers": {SS: []*string{aws.String("+1999999999"), aws.String("+2111111111")}},
+							"profile_pics":  {BS: [][]byte{[]byte("U29tZUJ5dGVzRGF0YTk="), []byte("U29tZUJ5dGVzRGF0YTEw=")}},
+							"salaries":      {NS: []*string{aws.String("11000"), aws.String("12000.25")}},
 						},
 					},
 				},
