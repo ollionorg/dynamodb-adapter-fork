@@ -422,7 +422,6 @@ func parseUpdateExpresstion(actionValue string) *models.UpdateExpressionConditio
 }
 
 func performOperation(ctx context.Context, action string, actionValue string, updateAtrr models.UpdateAttr, oldRes map[string]interface{}) (map[string]interface{}, map[string]interface{}, error) {
-	fmt.Println(action, "actionValue", actionValue, "updateAtrr", updateAtrr, "oldRes", oldRes)
 	switch {
 	case action == "DELETE":
 		// perform delete
@@ -448,7 +447,6 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 
 	case action == "REMOVE":
 		res, err := services.Remove(ctx, updateAtrr.TableName, updateAtrr, actionValue, nil, oldRes)
-		fmt.Println("res", res, "err", err, updateAtrr.PrimaryKeyMap)
 		return res, updateAtrr.PrimaryKeyMap, err
 	default:
 	}

@@ -15,6 +15,7 @@
 package v1
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -668,44 +669,44 @@ func TestParseActionValue(t *testing.T) {
 	}
 }
 
-// func TestPerformOperation(t *testing.T) {
-// 	tests := []struct {
-// 		name           string
-// 		action         string
-// 		updateAttr     models.UpdateAttr
-// 		oldRes         map[string]interface{}
-// 		expectedResult map[string]interface{}
-// 		actionValue    string
-// 	}{
-// 		{
-// 			name:   "Remove item from list",
-// 			action: "REMOVE",
-// 			updateAttr: models.UpdateAttr{
-// 				UpdateExpression:         "REMOVE list_type[1]",
-// 				ExpressionAttributeMap:   map[string]interface{}{},
-// 				ExpressionAttributeNames: map[string]string{},
-// 				PrimaryKeyMap: map[string]interface{}{
-// 					"id": "1",
-// 				},
-// 			},
-// 			oldRes: map[string]interface{}{
-// 				"list_type": []interface{}{"John", "Doe", "Jane"},
-// 			},
-// 			expectedResult: map[string]interface{}{
-// 				"id":        "1",
-// 				"list_type": []interface{}{"John", "Jane"},
-// 			},
-// 			actionValue: "list_type[1]",
-// 		},
-// 	}
+func TestPerformOperation(t *testing.T) {
+	tests := []struct {
+		name           string
+		action         string
+		updateAttr     models.UpdateAttr
+		oldRes         map[string]interface{}
+		expectedResult map[string]interface{}
+		actionValue    string
+	}{
+		{
+			name:   "Remove item from list",
+			action: "REMOVE",
+			updateAttr: models.UpdateAttr{
+				UpdateExpression:         "REMOVE list_type[1]",
+				ExpressionAttributeMap:   map[string]interface{}{},
+				ExpressionAttributeNames: map[string]string{},
+				PrimaryKeyMap: map[string]interface{}{
+					"id": "1",
+				},
+			},
+			oldRes: map[string]interface{}{
+				"list_type": []interface{}{"John", "Doe", "Jane"},
+			},
+			expectedResult: map[string]interface{}{
+				"id":        "1",
+				"list_type": []interface{}{"John", "Jane"},
+			},
+			actionValue: "list_type[1]",
+		},
+	}
 
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			ctx := context.Background()
-// 			result, _, _ := performOperation(ctx, tt.action, tt.actionValue, tt.updateAttr, tt.oldRes)
-// 			if !reflect.DeepEqual(result, tt.expectedResult) {
-// 				t.Errorf("Test %s failed: expected %v, got %v", tt.name, tt.expectedResult, result)
-// 			}
-// 		})
-// 	}
-// }
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			result, _, _ := performOperation(ctx, tt.action, tt.actionValue, tt.updateAttr, tt.oldRes)
+			if !reflect.DeepEqual(result, tt.expectedResult) {
+				t.Errorf("Test %s failed: expected %v, got %v", tt.name, tt.expectedResult, result)
+			}
+		})
+	}
+}
