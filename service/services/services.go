@@ -421,7 +421,8 @@ func parseSpannerCondition(query *models.Query, pKey, sKey string) (string, map[
 func createWhereClause(whereClause string, expression string, queryVar string, RangeValueMap map[string]interface{}, params map[string]interface{}) (string, string) {
 	_, _, expression = utils.ParseBeginsWith(expression)
 	expression = strings.ReplaceAll(expression, "begins_with", "STARTS_WITH")
-	if whereClause != "WHERE " && !strings.HasSuffix(whereClause, "AND ") {
+	trimmedString := strings.TrimSpace(whereClause)
+	if whereClause != "WHERE " && !strings.HasSuffix(trimmedString, "AND") {
 		whereClause += " AND "
 	}
 	count := 1

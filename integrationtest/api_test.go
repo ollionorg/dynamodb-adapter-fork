@@ -1572,6 +1572,7 @@ func handlerInitFunc() *gin.Engine {
 }
 
 func createPostTestCase(name, url, dynamoAction, outputString string, input interface{}) apitesting.APITestCase {
+	fmt.Println("hello world!", name)
 	return apitesting.APITestCase{
 		Name:    name,
 		ReqType: "POST",
