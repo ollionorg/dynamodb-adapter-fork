@@ -888,7 +888,10 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 }
 
 func convertSingle(output map[string]interface{}, v reflect.Value) error {
-
+	if !v.IsValid() || (v.Kind() == reflect.Ptr && v.IsNil()) {
+		output["NULL"] = true
+		return nil
+	}
 	switch v.Kind() {
 	case reflect.Bool:
 		output["BOOL"] = new(bool)
