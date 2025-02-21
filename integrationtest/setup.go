@@ -115,6 +115,13 @@ func createDatabase(w io.Writer, db string) error {
 				d_name 		 STRING(MAX),
 				d_specialization STRING(MAX),
 			) PRIMARY KEY (d_id)`,
+			`CREATE TABLE mapdynamo (
+				guid STRING(MAX) NOT NULL,
+				context STRING(MAX) NOT NULL,
+				contact_ranking_list STRING(MAX),
+				name STRING(MAX),
+				address JSON
+			) PRIMARY KEY (guid, context)`,
 		},
 	})
 	if err != nil {
@@ -199,6 +206,72 @@ func initData(w io.Writer, db string) error {
 						(100, 'Engineering', 'CSE, ECE, Civil'),
 						(200, 'Arts', 'BA'),
 						(300, 'Culture', 'History')`,
+		}
+		rowCount, err := txn.Update(ctx, stmt)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "%d record(s) inserted.\n", rowCount)
+		return err
+	})
+	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		stmt := spanner.Statement{
+			SQL: `INSERT INTO mapdynamo (guid, context, contact_ranking_list, name, address)
+						VALUES (
+						'123e4567-e89b-12d3-a456-value001',
+						'user-profile',
+						'1,2,3',
+						'Jane Smith',
+						JSON'''{
+						"active": true,
+						"additional_details": {
+						"additional_details_2": {
+							"landmark_field": "near water tank road",
+							"landmark_field_number": 1001
+						},
+						"apartment_number": "5B",
+						"landmark": "Near Central Park",
+						"landmark notes": "YmluYXJ5X2RhdGE="
+						},
+						"mobilenumber": 9035599089,
+						"notes": "YmluYXJ5X2RhdGE=",
+						"permanent_address": "789 Elm St, Springfield, SP",
+						"present_address": "101 Maple Ave, Metropolis, MP"
+						}'''
+						)`,
+		}
+		rowCount, err := txn.Update(ctx, stmt)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "%d record(s) inserted.\n", rowCount)
+		return err
+	})
+	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		stmt := spanner.Statement{
+			SQL: `INSERT INTO mapdynamo (guid, context, contact_ranking_list, name, address)
+						VALUES (
+						'123e4567-e89b-12d3-a456-value011',
+						'user-profile',
+						'1,2,3',
+						'Jane Smith',
+						JSON'''{
+						"active": true,
+						"additional_details": {
+						"additional_details_2": {
+							"landmark_field": "near factory road",
+							"landmark_field_number": 1001
+						},
+						"apartment_number": "5B",
+						"landmark": "Near Central Park",
+						"landmark notes": "YmluYXJ5X2RhdGE="
+						},
+						"mobilenumber": 9035599089,
+						"notes": "YmluYXJ5X2RhdGE=",
+						"permanent_address": "789 Elm St, Springfield, SP",
+						"present_address": "101 Maple Ave, Metropolis, MP"
+						}'''
+						)`,
 		}
 		rowCount, err := txn.Update(ctx, stmt)
 		if err != nil {
