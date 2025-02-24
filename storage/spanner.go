@@ -826,7 +826,7 @@ func parseStringColumn(r *spanner.Row, idx int, col string, row map[string]inter
 		return err
 	}
 	if s.IsNull() {
-		row[col] = map[string]bool{"NULL": true}
+		row[col] = nil
 		return nil
 	} else {
 		row[col] = s.StringVal
@@ -886,7 +886,7 @@ func parseNumericColumn(r *spanner.Row, idx int, col string, row map[string]inte
 		return err
 	}
 	if s.IsNull() {
-		row[col] = map[string]bool{"NULL": true}
+		row[col] = nil
 		return nil
 	} else {
 		row[col] = s.Float64
@@ -913,7 +913,7 @@ func parseBoolColumn(r *spanner.Row, idx int, col string, row map[string]interfa
 		return err
 	}
 	if s.IsNull() {
-		row[col] = map[string]interface{}{"NULL": true}
+		row[col] = nil
 	} else {
 		row[col] = s.Bool
 	}
@@ -942,9 +942,7 @@ func parseStringArrayColumn(r *spanner.Row, idx int, col string, row map[string]
 	for _, val := range s {
 		temp = append(temp, val.StringVal)
 	}
-	if len(temp) == 0 {
-		row[col] = map[string]interface{}{"NULL": true}
-	} else {
+	if len(s) > 0 {
 		row[col] = temp
 	}
 	return nil
@@ -968,9 +966,7 @@ func parseByteArrayColumn(r *spanner.Row, idx int, col string, row map[string]in
 	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
 		return err
 	}
-	if len(b) == 0 {
-		row[col] = map[string]interface{}{"NULL": true}
-	} else {
+	if len(b) > 0 {
 		row[col] = b
 	}
 	return nil
@@ -1000,9 +996,7 @@ func parseNumberArrayColumn(r *spanner.Row, idx int, col string, row map[string]
 			temp = append(temp, val.Float64)
 		}
 	}
-	if len(temp) == 0 {
-		row[col] = map[string]interface{}{"NULL": true}
-	} else {
+	if len(nums) > 0 {
 		row[col] = temp
 	}
 	return nil
@@ -1066,7 +1060,7 @@ func parseNullColumn(r *spanner.Row, idx int, col string, row map[string]interfa
 		return err
 	}
 	if s.IsNull() {
-		row[col] = map[string]interface{}{"NULL": true} // Ensure correct format
+		row[col] = nil
 		return nil
 	}
 	return nil
