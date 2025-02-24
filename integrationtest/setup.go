@@ -183,26 +183,6 @@ func initData(w io.Writer, db string) error {
 
 	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		stmt := spanner.Statement{
-			SQL: `INSERT employee (emp_id, address, age, first_name, last_name) VALUES
-						(1, 'Shamli', 10, 'Marc', 'Richards'),
-						(2, 'Ney York', 20, 'Catalina', 'Smith'),
-						(3, 'Pune', 30, 'Alice', 'Trentor'),
-						(4, 'Silicon Valley', 40, 'Lea', 'Martin'),
-						(5, 'London', 50, 'David', 'Lomond')`,
-		}
-		rowCount, err := txn.Update(ctx, stmt)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(w, "%d record(s) inserted.\n", rowCount)
-		return err
-	})
-	if err != nil {
-		return err
-	}
-
-	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		stmt := spanner.Statement{
 			SQL: `INSERT INTO employee (emp_id, address, age, first_name, last_name, phone_numbers, profile_pics, salaries) VALUES
 				(1, 'Shamli', 10, 'Marc', 'Richards', 
 				['+1111111111', '+1222222222'], 
