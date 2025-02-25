@@ -33,16 +33,28 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
+type ServiceInterface interface {
+}
+
 type Storage interface {
 	SpannerTransactGetItems(ctx context.Context, tableName string, pValues, sValues []interface{}, projectionCols []string) ([]map[string]interface{}, error)
 }
 type Service interface {
+	//BatchGetWithProjection(ctx context.Context, tableName string, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) ([]map[string]interface{}, error)
+
+	// BatchWriteItem(c *gin.Context)
+	// DeleteItem(c *gin.Context)
+	// GetItemMeta(c *gin.Context)
+	// UpdateMeta(c *gin.Context)
+	// QueryTable(c *gin.Context)
+	// Scan(c *gin.Context)
+	// Update(c *gin.Context)
+	// TransactGetItems(c *gin.Context)
 	MayIReadOrWrite(tableName string, isWrite bool, user string) bool
-	TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, keyMapArraymap []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string, st Storage) ([]map[string]interface{}, error)
 }
 
-type spannerService struct { // Define a concrete type for your service
-	spannerClient *spanner.Client // Example: Your Spanner client
+type spannerService struct {
+	spannerClient *spanner.Client
 	st            Storage
 }
 
@@ -58,13 +70,16 @@ func SetServiceInstance(s Service) {
 func GetServiceInstance() Service {
 	once.Do(func() {
 		storageInstance := storage.GetStorageInstance()
-		// Initialize your Spanner client and other dependencies here
 		spannerClient, err := storageInstance.GetSpannerClient()
 		if err != nil {
-			// Handle error appropriately, e.g., log and panic
-			//logger.Fatalf("Failed to initialize Spanner client: %v", err)
+			//logger.LogErrorf("Failed to initialize Spanner client: %v", err)
+			panic(err)
 		}
-		service = &spannerService{spannerClient: spannerClient, st: storage.GetStorageInstance()}
+
+		service = &spannerService{
+			spannerClient: spannerClient,
+			st:            storageInstance,
+		}
 	})
 	return service
 }

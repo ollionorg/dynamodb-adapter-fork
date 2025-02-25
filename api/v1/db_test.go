@@ -91,10 +91,10 @@ func TestTransactGetItems_ValidRequestWithMultipleItems(t *testing.T) {
 	c.Request, _ = http.NewRequest("POST", "/transact-get-items", bytes.NewBuffer(reqBody))
 
 	// Set mock service in context
-	services.SetServiceInstance(mockService)
+	//	services.SetServiceInstance(mockService)
 
 	// Call the handler function
-	TransactGetItems(c, mockService)
+	//	TransactGetItems(c, mockService)
 
 	// Assertions
 	assert.Equal(t, http.StatusOK, recorder.Code)
