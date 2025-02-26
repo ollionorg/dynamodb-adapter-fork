@@ -421,7 +421,7 @@ func parseUpdateExpresstion(actionValue string) *models.UpdateExpressionConditio
 	return expr
 }
 
-func performOperation(ctx context.Context, action string, actionValue string, updateAtrr models.UpdateAttr, oldRes map[string]interface{}) (map[string]interface{}, map[string]interface{}, error) {
+func performOperation(ctx context.Context, action string, actionValue string, updateAtrr models.UpdateAttr, oldRes map[string]interface{}, spannerRow map[string]interface{}) (map[string]interface{}, map[string]interface{}, error) {
 	switch {
 	case action == "DELETE":
 		// perform delete
@@ -432,12 +432,12 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 		if strings.Contains(actionValue, "list_append") {
 			// parse list_append operation here
 			m, expr := parseActionValue(actionValue, updateAtrr, false, oldRes)
-			res, err := services.Put(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes)
+			res, err := services.Put(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes, spannerRow)
 			return res, m, err
 		}
 		// Update data in table
 		m, expr := parseActionValue(actionValue, updateAtrr, false, oldRes)
-		res, err := services.Put(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes)
+		res, err := services.Put(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes, spannerRow)
 		return res, m, err
 	case action == "ADD":
 		// Add data in table
@@ -457,8 +457,9 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 func UpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr) (interface{}, error) {
 	updateAtrr.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(updateAtrr.TableName, updateAtrr.ExpressionAttributeNames)
 	var oldRes map[string]interface{}
+	var spannerRow map[string]interface{}
 	if updateAtrr.ReturnValues != "NONE" {
-		oldRes, _ = services.GetWithProjection(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, "", nil)
+		oldRes, spannerRow, _ = services.GetWithProjection(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, "", nil)
 	}
 	var resp map[string]interface{}
 	var actVal = make(map[string]interface{})
@@ -470,7 +471,7 @@ func UpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr) (interf
 	m := extractOperations(updateAtrr.UpdateExpression)
 
 	for k, v := range m {
-		res, acVal, err := performOperation(ctx, k, v, updateAtrr, oldRes)
+		res, acVal, err := performOperation(ctx, k, v, updateAtrr, oldRes, spannerRow)
 		resp = res
 		er = err
 		for k, v := range acVal {
@@ -878,17 +879,17 @@ func ChangeMaptoDynamoMap(in interface{}) (map[string]interface{}, error) {
 		return nil, nil
 	}
 	outputObject := make(map[string]interface{})
-	err := convertMapToDynamoObject(outputObject, reflect.ValueOf(in))
+	err := convertMapToDynamoObject(outputObject, reflect.ValueOf(in), true)
 	return outputObject, err
 }
 
-func convertMapToDynamoObject(output map[string]interface{}, v reflect.Value) error {
+func convertMapToDynamoObject(output map[string]interface{}, v reflect.Value, isFirstLevelField bool) error {
 	v = valueElem(v)
 	switch v.Kind() {
 	case reflect.Map:
-		return convertMap(output, v)
+		return convertMap(output, v, isFirstLevelField)
 	case reflect.Slice, reflect.Array:
-		return convertSlice(output, v)
+		return convertSlice(output, v, isFirstLevelField)
 	case reflect.Chan, reflect.Func, reflect.UnsafePointer:
 		// unsupported
 	default:
@@ -909,7 +910,7 @@ func valueElem(v reflect.Value) reflect.Value {
 	return v
 }
 
-func convertMap(output map[string]interface{}, v reflect.Value) error {
+func convertMap(output map[string]interface{}, v reflect.Value, isFirstLevelField bool) error {
 	for _, key := range v.MapKeys() {
 		keyName := fmt.Sprint(key.Interface())
 		if keyName == "" {
@@ -918,14 +919,14 @@ func convertMap(output map[string]interface{}, v reflect.Value) error {
 
 		elemVal := v.MapIndex(key)
 		elem := make(map[string]interface{})
-		_ = convertMapToDynamoObject(elem, elemVal)
+		_ = convertMapToDynamoObject(elem, elemVal, isFirstLevelField)
 
 		output[keyName] = elem
 	}
 	return nil
 }
 
-func convertSlice(output map[string]interface{}, v reflect.Value) error {
+func convertSlice(output map[string]interface{}, v reflect.Value, isFirstLevelField bool) error {
 	if v.Kind() == reflect.Array && v.Len() == 0 {
 		return nil
 	}
@@ -970,23 +971,76 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 
 	default:
 		listVal := make([]map[string]interface{}, 0, v.Len())
-
+		typeArray := []string{}
 		for i := 0; i < v.Len(); i++ {
 			elem := make(map[string]interface{})
-			err := convertMapToDynamoObject(elem, v.Index(i))
+			err := convertMapToDynamoObject(elem, v.Index(i), isFirstLevelField)
+			v_type := valueElem(v.Index(i))
+			typeArray = append(typeArray, v_type.Kind().String())
 			if err != nil {
 				return err
 			}
 			listVal = append(listVal, elem)
 		}
-		output["L"] = listVal
+		if isFirstLevelField {
+			output["L"] = listVal
+			isFirstLevelField = false
+		} else {
+			newlistVal := []string{}
+			if allElementsMatch(typeArray, []string{reflect.String.String()}) {
+				for _, val := range listVal {
+					for _, j := range val {
+						newlistVal = append(newlistVal, j.(string))
+					}
+				}
+				output["SS"] = newlistVal
+			} else if allElementsMatch(typeArray, []string{reflect.Float64.String(), reflect.Int.String(), reflect.Int8.String(), reflect.Int16.String(), reflect.Int32.String(), reflect.Int64.String()}) {
+				for _, val := range listVal {
+					for _, j := range val {
+						newlistVal = append(newlistVal, j.(string))
+					}
+				}
+				output["NS"] = newlistVal
+			} else if allElementsMatch(typeArray, []string{reflect.Slice.String()}) {
+				for _, val := range listVal {
+					for _, j := range val {
+						switch k := j.(type) {
+						case []byte:
+							newlistVal = append(newlistVal, string(k))
+						default:
+							newlistVal = append(newlistVal, j.(string))
+						}
+					}
+				}
+				output["BS"] = newlistVal
+			} else {
+				output["L"] = listVal
+			}
+		}
 	}
-
 	return nil
 }
 
-func convertSingle(output map[string]interface{}, v reflect.Value) error {
+// allElementsMatch checks if all elements in the slice match at least one of the allowed types.
+// It accepts a slice of strings representing element types and a slice of allowed type names as strings.
+func allElementsMatch(elements []string, allowedTypes []string) bool {
+	typeSet := make(map[string]struct{})
 
+	// Populate the type set for quick lookup from allowedTypes
+	for _, t := range allowedTypes {
+		typeSet[t] = struct{}{}
+	}
+
+	// Check each element against the allowed types
+	for _, element := range elements {
+		if _, exists := typeSet[element]; !exists {
+			return false // If any element does not match, return false
+		}
+	}
+	return true // All elements match at least one of the allowed types
+}
+
+func convertSingle(output map[string]interface{}, v reflect.Value) error {
 	switch v.Kind() {
 	case reflect.Bool:
 		output["BOOL"] = new(bool)
