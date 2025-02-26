@@ -1203,3 +1203,52 @@ func checkInifinty(value float64, logData interface{}) error {
 
 	return nil
 }
+
+func (s Storage) SpannerTransactGetItems(ctx context.Context, tableName string, pKeys, sKeys []interface{}, projectionCols []string) ([]map[string]interface{}, error) {
+	client := s.getSpannerClient(tableName)
+	// Start the transaction using the Spanner client
+	txn := client.ReadOnlyTransaction()
+	defer txn.Close()
+	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(tableName)]
+	if !ok {
+		return nil, errors.New("ResourceNotFoundException", tableName)
+	}
+
+	var keySet []spanner.KeySet
+
+	for i := range pKeys {
+		if len(sKeys) == 0 || sKeys[i] == nil {
+			keySet = append(keySet, spanner.Key{pKeys[i]})
+		} else {
+			keySet = append(keySet, spanner.Key{pKeys[i], sKeys[i]})
+		}
+	}
+	if len(projectionCols) == 0 {
+		var ok bool
+		projectionCols, ok = models.TableColumnMap[utils.ChangeTableNameForSpanner(tableName)]
+		if !ok {
+			return nil, errors.New("ResourceNotFoundException", tableName)
+		}
+	}
+	// Perform the transaction read operation
+	itr := txn.Read(ctx, tableName, spanner.KeySets(keySet...), projectionCols)
+	defer itr.Stop()
+	allRows := []map[string]interface{}{}
+	for {
+		r, err := itr.Next()
+		if err != nil {
+			if err == iterator.Done {
+				break
+			}
+			return nil, errors.New("ValidationException", err)
+		}
+		singleRow, err := parseRow(r, colDLL)
+		if err != nil {
+			return nil, err
+		}
+		if len(singleRow) > 0 {
+			allRows = append(allRows, singleRow)
+		}
+	}
+	return allRows, nil
+}

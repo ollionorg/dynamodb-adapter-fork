@@ -29,7 +29,7 @@ require (
 	go.uber.org/zap v1.19.1
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	google.golang.org/api v0.218.0
-	google.golang.org/genproto v0.0.0-20250122153221-138b5a5a4fd4
+	google.golang.org/genproto v0.0.0-20250122153221-138b5a5a4fd4 // indirect
 	gopkg.in/go-playground/assert.v1 v1.2.1
 )
 
@@ -66,6 +66,8 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sergi/go-diff v1.0.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/tj/assert v0.0.3
 	github.com/ugorji/go/codec v1.2.6 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f // indirect
