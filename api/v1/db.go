@@ -71,7 +71,7 @@ func (h *APIHandler) RouteRequest(c *gin.Context) {
 		h.Scan(c)
 	case "UpdateItem":
 		h.Update(c)
-	case "TransactGetItem":
+	case "TransactGetItems":
 		h.TransactGetItems(c)
 	default:
 		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of "+amzTarget).
