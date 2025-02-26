@@ -36,7 +36,8 @@ import (
 // @host localhost:9050
 // @BasePath /v1
 func main() {
-	initErr := initializer.InitAll()
+
+	initErr := initializer.InitAll("config.yaml")
 	if initErr != nil {
 		log.Fatalln(initErr)
 	}

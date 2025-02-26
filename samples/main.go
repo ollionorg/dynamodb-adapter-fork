@@ -17,19 +17,20 @@ func main() {
 
 	// Create DynamoDB service client
 	svc := dynamodb.New(sess)
-	fmt.Println("svc", svc)
 
-	//createItem(svc) //PutItem
-	readItems(svc) //Scan
-	//updateItem(svc) //UpdateItem
-	//deleteItem(svc) //DeleteItem
-	//getItem(svc) //GetItem
-	//queryItems(svc) //QueryItem
-	//batchGetItem(svc) //BatchGetItem
-	//batchWriteItem(svc) //BatchWriteItem
+	createItem(svc)     //PutItem
+	readItems(svc)      //Scan
+	updateItem(svc)     //UpdateItem
+	deleteItem(svc)     //DeleteItem
+	getItem(svc)        //GetItem
+	queryItems(svc)     //QueryItem
+	batchGetItem(svc)   //BatchGetItem
+	batchWriteItem(svc) //BatchWriteItem
 }
 
 func createItem(svc *dynamodb.DynamoDB) {
+
+	empDetailsJSON := `["Developer", "Remote", "5 years experience"]`
 
 	item := map[string]*dynamodb.AttributeValue{
 		"emp_id": {
@@ -43,6 +44,12 @@ func createItem(svc *dynamodb.DynamoDB) {
 		},
 		"emp_image": {
 			B: []byte("binary_data_here"),
+		},
+		"emp_status": {
+			NULL: aws.Bool(true), // Explicitly setting NULL
+		},
+		"emp_details": {
+			S: aws.String(empDetailsJSON),
 		},
 	}
 
@@ -59,25 +66,6 @@ func createItem(svc *dynamodb.DynamoDB) {
 	}
 
 	fmt.Println("Successfully added item:", item)
-}
-
-func checkItemExists(svc *dynamodb.DynamoDB, empID string) bool {
-	input := &dynamodb.GetItemInput{
-		TableName: aws.String("employee_table"),
-		Key: map[string]*dynamodb.AttributeValue{
-			"emp_id": {
-				N: aws.String(empID),
-			},
-		},
-	}
-
-	result, err := svc.GetItem(input)
-	if err != nil {
-		fmt.Println("Error checking item:", err)
-		return false
-	}
-
-	return result.Item != nil
 }
 
 func readItems(svc *dynamodb.DynamoDB) {
@@ -250,6 +238,9 @@ func batchWriteItem(svc *dynamodb.DynamoDB) {
 							"isHired": {
 								BOOL: aws.Bool(true),
 							},
+							"emp_details": {
+								S: aws.String(`["Developer", "Remote", "5 years experience"]`), // JSON List
+							},
 						},
 					},
 				},
@@ -267,6 +258,9 @@ func batchWriteItem(svc *dynamodb.DynamoDB) {
 							},
 							"isHired": {
 								BOOL: aws.Bool(true),
+							},
+							"emp_details": {
+								S: aws.String(`["Manager", "Hybrid", "10 years experience"]`), // JSON List
 							},
 						},
 					},
@@ -286,6 +280,9 @@ func batchWriteItem(svc *dynamodb.DynamoDB) {
 							"isHired": {
 								BOOL: aws.Bool(true),
 							},
+							"emp_details": {
+								S: aws.String(`["HR", "On-site", "8 years experience"]`), // JSON List
+							},
 						},
 					},
 				},
@@ -303,6 +300,9 @@ func batchWriteItem(svc *dynamodb.DynamoDB) {
 							},
 							"isHired": {
 								BOOL: aws.Bool(true),
+							},
+							"emp_details": {
+								S: aws.String(`["Engineer", "Remote", "3 years experience"]`), // JSON List
 							},
 						},
 					},

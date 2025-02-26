@@ -17,6 +17,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -62,7 +63,7 @@ func RouteRequest(c *gin.Context) {
 	case "UpdateItem":
 		Update(c)
 	default:
-		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of"+amzTarget).
+		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of "+amzTarget).
 			HTTPResponse("X-Amz-Target Header not supported"))
 	}
 }
@@ -189,7 +190,7 @@ func queryResponse(query models.Query, c *gin.Context) {
 	}
 
 	if query.Limit == 0 {
-		query.Limit = config.ConfigurationMap.QueryLimit
+		query.Limit = models.GlobalConfig.Spanner.QueryLimit
 	}
 	query.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(query.TableName, query.ExpressionAttributeNames)
 	query = ReplaceHashRangeExpr(query)
@@ -616,7 +617,8 @@ func Scan(c *gin.Context) {
 					c.JSON(errors.HTTPResponse(err, "LastEvaluatedKeyChangeError"))
 				}
 			}
-			c.JSON(http.StatusOK, res)
+			jsonData, _ := json.Marshal(res)
+			c.JSON(http.StatusOK, json.RawMessage(jsonData))
 		} else {
 			c.JSON(errors.HTTPResponse(err, meta))
 		}

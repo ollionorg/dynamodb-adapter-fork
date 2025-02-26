@@ -18,10 +18,12 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"sync"
 
 	"gopkg.in/yaml.v3"
+
+	"log"
+	"os"
 
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
@@ -43,19 +45,12 @@ func init() {
 	ConfigurationMap = new(Configuration)
 }
 
-// Define a global variable for reading files (mockable for tests)
 var readFile = os.ReadFile
 
-// InitConfig loads ConfigurationMap and DbConfigMap in memory based on
-// ACTIVE_ENV. If ACTIVE_ENV is not set or and empty string the environment
-// is defaulted to staging.
-//
-// These config files are read from rice-box
-
-func InitConfig() {
-	GlobalConfig, err := loadConfig("config.yaml")
+func InitConfig(filepath string) {
+	GlobalConfig, err := loadConfig(filepath)
 	if err != nil {
-		fmt.Errorf("failed to read config file: %w", err)
+		log.Printf("failed to read config file: %v", err)
 	}
 	models.GlobalConfig = GlobalConfig
 }
@@ -65,6 +60,7 @@ func loadConfig(filename string) (*models.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
+	// Unmarshal YAML data into config struct
 	var config models.Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
