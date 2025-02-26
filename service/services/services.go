@@ -40,16 +40,7 @@ type Storage interface {
 	SpannerTransactGetItems(ctx context.Context, tableName string, pValues, sValues []interface{}, projectionCols []string) ([]map[string]interface{}, error)
 }
 type Service interface {
-	//BatchGetWithProjection(ctx context.Context, tableName string, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) ([]map[string]interface{}, error)
-
-	// BatchWriteItem(c *gin.Context)
-	// DeleteItem(c *gin.Context)
-	// GetItemMeta(c *gin.Context)
-	// UpdateMeta(c *gin.Context)
-	// QueryTable(c *gin.Context)
-	// Scan(c *gin.Context)
-	// Update(c *gin.Context)
-	// TransactGetItems(c *gin.Context)
+	TransactGetItem(ctx context.Context, getRequest models.GetItemRequest, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) ([]map[string]interface{}, error)
 	MayIReadOrWrite(tableName string, isWrite bool, user string) bool
 }
 
@@ -595,7 +586,7 @@ func Scan(ctx context.Context, scanData models.ScanMeta) (map[string]interface{}
 	query.TableName = scanData.TableName
 	query.Limit = scanData.Limit
 	if query.Limit == 0 {
-		query.Limit = config.ConfigurationMap.QueryLimit
+		query.Limit = models.GlobalConfig.Spanner.QueryLimit
 	}
 	query.StartFrom = scanData.StartFrom
 	query.RangeValMap = scanData.ExpressionAttributeMap
@@ -644,8 +635,15 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 	return updateResp, nil
 }
 
-func (s *spannerService) TransactGetItems(ctx context.Context, getRequest models.GetItemRequest, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string, st Storage) ([]map[string]interface{}, error) {
-
+// TransactGetItem - fetch data from Spanner using Spanner TransactGetItems function
+//
+// This function takes a context, a GetItemRequest, a slice of keyMap, a projection expression string, and an expression attribute names map, and returns a slice of maps and an error.
+//
+// The function first gets the table configuration using the table name from the GetItemRequest.
+// Then it converts the projection expression to a slice of column names.
+// Then it creates two slices, pValues and sValues, to store the partition key and the sort key values.
+// Finally, it calls the SpannerTransactGetItems function on the Storage interface to fetch the data from Spanner.
+func (s *spannerService) TransactGetItem(ctx context.Context, getRequest models.GetItemRequest, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) ([]map[string]interface{}, error) {
 	if len(keyMapArray) == 0 {
 		var resp = make([]map[string]interface{}, 0)
 		return resp, nil
@@ -667,13 +665,5 @@ func (s *spannerService) TransactGetItems(ctx context.Context, getRequest models
 		pValues = append(pValues, pValue)
 	}
 
-	return st.SpannerTransactGetItems(ctx, tableName, pValues, sValues, projectionCols)
+	return s.st.SpannerTransactGetItems(ctx, tableName, pValues, sValues, projectionCols)
 }
-
-// 704,  employee map[emp_id:{
-// 	N: "1"
-//   }]
-//   744 [map[emp_id:1]]
-//   emp_id, first_name map[#emp_id:emp_id #first_name:first_name]
-//   [emp_id first_name]
-//serices 621 [1] [] [emp_id first_name]

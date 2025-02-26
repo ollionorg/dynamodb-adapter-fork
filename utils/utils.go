@@ -172,3 +172,74 @@ func ChangeTableNameForSpanner(tableName string) string {
 	tableName = strings.ReplaceAll(tableName, "-", "_")
 	return tableName
 }
+
+// Convert DynamoDB data types to equivalent Spanner types
+func ConvertDynamoTypeToSpannerType(dynamoType string) string {
+	switch dynamoType {
+	case "S":
+		return "STRING(MAX)"
+	case "N":
+		return "FLOAT64"
+	case "B":
+		return "BYTES(MAX)"
+	case "BOOL":
+		return "BOOL"
+	case "NULL":
+		return "NULL"
+	case "SS":
+		return "ARRAY<STRING(MAX)>"
+	case "NS":
+		return "ARRAY<FLOAT64>"
+	case "BS":
+		return "ARRAY<BYTES(MAX)>"
+	case "M":
+		return "JSON"
+	case "L":
+		return "JSON"
+	default:
+		return "STRING(MAX)"
+	}
+}
+
+// RemoveDuplicatesString removes duplicates from a []string
+func RemoveDuplicatesString(input []string) []string {
+	seen := make(map[string]struct{})
+	var result []string
+
+	for _, val := range input {
+		if _, exists := seen[val]; !exists {
+			seen[val] = struct{}{}
+			result = append(result, val)
+		}
+	}
+	return result
+}
+
+// RemoveDuplicatesFloat removes duplicates from a []float64
+func RemoveDuplicatesFloat(input []float64) []float64 {
+	seen := make(map[float64]struct{})
+	var result []float64
+
+	for _, val := range input {
+		if _, exists := seen[val]; !exists {
+			seen[val] = struct{}{}
+			result = append(result, val)
+		}
+	}
+	return result
+}
+
+// RemoveDuplicatesByteSlice removes duplicates from a [][]byte
+func RemoveDuplicatesByteSlice(input [][]byte) [][]byte {
+	seen := make(map[string]struct{})
+	var result [][]byte
+
+	for _, val := range input {
+		key := string(val) // Convert byte slice to string for map key
+		if _, exists := seen[key]; !exists {
+			seen[key] = struct{}{}
+			result = append(result, val)
+		}
+	}
+	return result
+}

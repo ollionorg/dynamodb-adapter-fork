@@ -21,7 +21,6 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 	"github.com/stretchr/testify/mock"
@@ -788,8 +787,8 @@ func TestTransactGetItems(t *testing.T) {
 		{"emp_id": 2, "name": "Jane Doe"},
 	}, nil)
 
-	config.DbConfigMap = make(map[string]models.TableConfig)
-	config.DbConfigMap["test_table"] = models.TableConfig{
+	models.DbConfigMap = make(map[string]models.TableConfig)
+	models.DbConfigMap["test_table"] = models.TableConfig{
 		ActualTable:  "test_table",
 		PartitionKey: "emp_id",
 	}
@@ -797,9 +796,9 @@ func TestTransactGetItems(t *testing.T) {
 	models.TableColumnMap = make(map[string][]string)
 	models.TableColumnMap[utils.ChangeTableNameForSpanner("test_table")] = []string{"emp_id", "name"}
 
-	s := &spannerService{}
+	s := &spannerService{st: mockStorage}
 	// 5. Inject the mock Storage into TransactGetItems
-	result, _ := s.TransactGetItems(ctx, getRequest, keyMapArray, projectionExpression, expressionAttributeNames, mockStorage) // Pass the mock here
+	result, _ := s.TransactGetItem(ctx, getRequest, keyMapArray, projectionExpression, expressionAttributeNames)
 	// assert.Len(t, result, 2)
 	assert.Equal(t, 1, result[0]["emp_id"])
 	assert.Equal(t, "John Doe", result[0]["name"])
