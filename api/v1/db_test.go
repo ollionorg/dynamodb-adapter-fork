@@ -77,8 +77,28 @@ func TestTransactGetItems_ValidRequestWithMultipleItems(t *testing.T) {
 		mock.Anything, // Correctly match the empty string
 		mock.Anything,
 	).Return([]map[string]interface{}{
-		{"emp_id": 1, "first_name": "John", "last_name": "Doe"},
-		{"emp_id": 2, "first_name": "Jane", "last_name": "Smith"},
+		{
+			"Item": map[string]interface{}{
+				"L": []interface{}{
+					map[string]interface{}{
+						"emp_id":     map[string]interface{}{"N": "1"},
+						"first_name": map[string]interface{}{"S": "John"},
+						"last_name":  map[string]interface{}{"S": "Doe"},
+					},
+				},
+			},
+		},
+		{
+			"Item": map[string]interface{}{
+				"L": []interface{}{
+					map[string]interface{}{
+						"emp_id":     map[string]interface{}{"N": "2"},
+						"first_name": map[string]interface{}{"S": "Jane"},
+						"last_name":  map[string]interface{}{"S": "Smith"},
+					},
+				},
+			},
+		},
 	}, nil).Twice()
 
 	h := &APIHandler{svc: mockSvc}
@@ -131,24 +151,42 @@ func TestTransactGetItems_ValidRequestWithMultipleItems(t *testing.T) {
 	}
 
 	assert.Equal(t, len(expectedEmployees), len(responses), "Response should contain correct number of items")
-	// for _, response := range responses {
-	// 	employeeData, exists := response.Item["employee"].(map[string]interface{})
-	// 	assert.True(t, exists, "Response should contain 'employee' key")
+	for _, response := range responses {
 
-	// 	// Access the "L" key
-	// 	employeeList, exists := employeeData["L"].(interface{}) // Type assertion tointerface{}
-	// 	assert.True(t, exists, "Response should contain 'L' key")
+		employeeData, exists := response.Item["L"].([]interface{})
+		assert.True(t, exists, "Response should contain 'L' key at the top level")
 
-	// 	// Now you can use len() and indexing on employeeList
-	// 	assert.Equal(t, 2, len(employeeList), "Employee list should contain two employees")
+		for _, item := range employeeData {
+			itemMap, ok := item.(map[string]interface{})
+			assert.True(t, ok, "Item should be a map")
 
-	// 	for j, expected := range expectedEmployees {
-	// 		assert.Equal(t, expected["emp_id"], employeeList[j].(map[string]interface{})["emp_id"])
-	// 		assert.Equal(t, expected["first_name"], employeeList[j].(map[string]interface{})["first_name"])
-	// 		assert.Equal(t, expected["last_name"], employeeList[j].(map[string]interface{})["last_name"])
-	// 	}
-	// }
+			nestedItem, exists := itemMap["Item"].(map[string]interface{})
+			assert.True(t, exists, "Item should contain 'Item' key")
+
+			nestedL, exists := nestedItem["L"].(map[string]interface{})
+			assert.True(t, exists, "Item should contain 'L' key")
+
+			finalList, exists := nestedL["L"].([]interface{})
+			assert.True(t, exists, "Final 'L' should be a list")
+
+			assert.Equal(t, 1, len(finalList), "Final list should contain one employee")
+
+			finalEmployeeMap, exists := finalList[0].(map[string]interface{})
+			assert.True(t, exists, "Final list should contain a map with employee attributes")
+
+			expectedEmployees := []map[string]interface{}{
+				{"emp_id": map[string]interface{}{"N": map[string]interface{}{"S": "1"}},
+					"first_name": map[string]interface{}{"S": map[string]interface{}{"S": "John"}},
+					"last_name":  map[string]interface{}{"S": map[string]interface{}{"S": "Doe"}}},
+				{"emp_id": map[string]interface{}{"N": map[string]interface{}{"S": "2"}},
+					"first_name": map[string]interface{}{"S": map[string]interface{}{"S": "Jane"}},
+					"last_name":  map[string]interface{}{"S": map[string]interface{}{"S": "Smith"}}},
+			}
+
+			assert.Contains(t, expectedEmployees, finalEmployeeMap, "Response should match expected employees")
+		}
+	}
 
 	// Verify that the mock expectations were met
-	//mockService.AssertExpectations(t)
+	mockSvc.AssertExpectations(t)
 }
