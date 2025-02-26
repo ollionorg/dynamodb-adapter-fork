@@ -34,12 +34,10 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
-type ServiceInterface interface {
-}
-
 type Storage interface {
 	SpannerTransactGetItems(ctx context.Context, tableName string, pValues, sValues []interface{}, projectionCols []string) ([]map[string]interface{}, error)
 }
+
 type Service interface {
 	TransactGetItem(ctx context.Context, getRequest models.GetItemRequest, keyMapArray []map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) ([]map[string]interface{}, error)
 	MayIReadOrWrite(tableName string, isWrite bool, user string) bool
@@ -50,9 +48,10 @@ type spannerService struct {
 	st            Storage
 }
 
-var service Service // Service interface variable
-
-var once sync.Once
+var (
+	service Service
+	once    sync.Once
+)
 
 // SetServiceInstance sets the service instance (for dependency injection)
 func SetServiceInstance(s Service) {
