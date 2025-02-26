@@ -54,7 +54,6 @@ func InitDBAPI(r *gin.Engine) {
 // RouteRequest - parse X-Amz-Target and call appropiate handler
 func (h *APIHandler) RouteRequest(c *gin.Context) {
 	var amzTarget = c.Request.Header.Get("X-Amz-Target")
-	//svc := services.GetServiceInstance()
 	switch strings.Split(amzTarget, ".")[1] {
 	case "BatchGetItem":
 		h.BatchGetItem(c)
