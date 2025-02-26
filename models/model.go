@@ -70,6 +70,8 @@ type Proxy struct {
 
 var GlobalProxy *Proxy
 
+var GlobalConfig *Config
+
 // Meta struct
 type Meta struct {
 	TableName                 string                              `json:"TableName"`
