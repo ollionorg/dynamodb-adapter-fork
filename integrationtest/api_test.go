@@ -1885,27 +1885,27 @@ func TestApi(t *testing.T) {
 
 	// this is done to maintain the order of the test cases
 	var testNames = []string{
-		// "GetItemAPI",
-		// "GetBatchAPI",
-		// "QueryAPI",
-		// "ScanAPI",
-		// "UpdateItemAPI",
-		// "PutItemAPI",
-		// "DeleteItemAPI",
-		// "BatchWriteItemAPI",
+		"GetItemAPI",
+		"GetBatchAPI",
+		"QueryAPI",
+		"ScanAPI",
+		"UpdateItemAPI",
+		"PutItemAPI",
+		"DeleteItemAPI",
+		"BatchWriteItemAPI",
 		"TransactGetItems",
 	}
 
 	var tests = map[string]func(t *testing.T){
-		// "GetItemAPI":        testGetItemAPI,
-		// "GetBatchAPI":       testGetBatchAPI,
-		// "QueryAPI":          testQueryAPI,
-		// "ScanAPI":           testScanAPI,
-		// "UpdateItemAPI":     testUpdateItemAPI,
-		// "PutItemAPI":        testPutItemAPI,
-		// "DeleteItemAPI":     testDeleteItemAPI,
-		// "BatchWriteItemAPI": testBatchWriteItemAPI,
-		"TransactGetItems": testTransactGetAPI,
+		"GetItemAPI":        testGetItemAPI,
+		"GetBatchAPI":       testGetBatchAPI,
+		"QueryAPI":          testQueryAPI,
+		"ScanAPI":           testScanAPI,
+		"UpdateItemAPI":     testUpdateItemAPI,
+		"PutItemAPI":        testPutItemAPI,
+		"DeleteItemAPI":     testDeleteItemAPI,
+		"BatchWriteItemAPI": testBatchWriteItemAPI,
+		"TransactGetItems":  testTransactGetAPI,
 	}
 
 	// run the tests

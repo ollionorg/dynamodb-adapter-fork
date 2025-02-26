@@ -1042,6 +1042,20 @@ func checkInifinty(value float64, logData interface{}) error {
 	return nil
 }
 
+// SpannerTransactGetItems retrieves items from a Spanner table within a transaction.
+//
+// Args:
+//
+//	ctx: The context for the transaction.
+//	tableName: The name of the Spanner table.
+//	pKeys: The primary keys for filtering the records.
+//	sKeys: The secondary keys for additional filtering.
+//	projectionCols: The columns to be retrieved in the result.
+//
+// Returns:
+//
+//	A slice of maps representing the retrieved rows, where each map corresponds to a row with column names as keys.
+//	An error if any issue occurs during the transaction or data retrieval.
 func (s Storage) SpannerTransactGetItems(ctx context.Context, tableName string, pKeys, sKeys []interface{}, projectionCols []string) ([]map[string]interface{}, error) {
 	client := s.getSpannerClient(tableName)
 	// Start the transaction using the Spanner client
