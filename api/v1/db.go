@@ -25,6 +25,7 @@ import (
 
 	otelgo "github.com/cloudspannerecosystem/dynamodb-adapter/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
@@ -33,7 +34,6 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/service/services"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/storage"
 	"github.com/gin-gonic/gin"
-	"github.com/opentracing/opentracing-go"
 )
 
 // InitDBAPI - routes for apis
@@ -68,13 +68,17 @@ func RouteRequest(c *gin.Context) {
 	}
 }
 
-func addParentSpanID(c *gin.Context, span opentracing.Span) opentracing.Span {
+func addParentSpanID(c *gin.Context, span trace.Span) trace.Span {
 	parentSpanID := c.Request.Header.Get("X-B3-Spanid")
 	traceID := c.Request.Header.Get("X-B3-Traceid")
 	serviceName := c.Request.Header.Get("service-name")
-	span = span.SetTag("parentSpanId", parentSpanID)
-	span = span.SetTag("traceId", traceID)
-	span = span.SetTag("service-name", serviceName)
+
+	span.SetAttributes(
+		attribute.String("parentSpanId", parentSpanID),
+		attribute.String("traceId", traceID),
+		attribute.String("service-name", serviceName),
+	)
+
 	return span
 }
 
@@ -91,31 +95,43 @@ func addParentSpanID(c *gin.Context, span opentracing.Span) opentracing.Span {
 func UpdateMeta(c *gin.Context) {
 	defer PanicHandler(c)
 	defer c.Request.Body.Close()
-	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
-	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
-	if err != nil || spanContext == nil {
-		logger.LogDebug(err)
+
+	startTime := time.Now()
+	ctx := c.Request.Context()
+	var err error
+
+	otelInstance := models.GlobalProxy.OtelInst
+	if otelInstance == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "OpenTelemetry instance not initialized"})
+		return
 	}
-	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
-	c.Request = c.Request.WithContext(ctx)
-	defer span.Finish()
+	ctx, span := otelInstance.StartSpan(ctx, "PutItem", []attribute.KeyValue{
+		attribute.String("request.method", c.Request.Method),
+		attribute.String("request.url", c.Request.URL.Path),
+	})
+	defer models.GlobalProxy.OtelInst.EndSpan(span)
 	addParentSpanID(c, span)
+	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "PutItem", startTime, err)
 	var meta models.Meta
-	if err := c.ShouldBindJSON(&meta); err != nil {
+	if err = c.ShouldBindJSON(&meta); err != nil {
+		otelgo.AddAnnotation(ctx, "PutItem Validation failed")
 		c.JSON(errors.New("ValidationException", err).HTTPResponse(meta))
 	} else {
-		if allow := services.MayIReadOrWrite(meta.TableName, true, "UpdateMeta"); !allow {
+		otelgo.AddAnnotation(ctx, "PutItem validation passed, processing request")
+		if allow := services.MayIReadOrWrite(meta.TableName, true, "PutItem"); !allow {
 			c.JSON(http.StatusOK, gin.H{})
 			return
 		}
 		logger.LogDebug(meta)
 		meta.AttrMap, err = ConvertDynamoToMap(meta.TableName, meta.Item)
 		if err != nil {
+			otelgo.AddAnnotation(ctx, "Error while ConvertDynamoToMap")
 			c.JSON(errors.New("ValidationException", err).HTTPResponse(meta))
 			return
 		}
 		meta.ExpressionAttributeMap, err = ConvertDynamoToMap(meta.TableName, meta.ExpressionAttributeValues)
 		if err != nil {
+			otelgo.AddAnnotation(ctx, "Error while ConvertDynamoToMap for ExpressionAttributeMap")
 			c.JSON(errors.New("ValidationException", err).HTTPResponse(meta))
 			return
 		}
@@ -136,6 +152,7 @@ func UpdateMeta(c *gin.Context) {
 				output = map[string]interface{}{"Attributes": output}
 			}
 
+			otelgo.AddAnnotation(ctx, "Successfully processed the PutItem request.")
 			c.JSON(http.StatusOK, output)
 		}
 	}
@@ -165,9 +182,17 @@ func put(ctx context.Context, tableName string, putObj map[string]interface{}, e
 func queryResponse(query models.Query, c *gin.Context) {
 	defer PanicHandler(c)
 	defer c.Request.Body.Close()
-	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI())
-	c.Request = c.Request.WithContext(ctx)
-	defer span.Finish()
+	ctx := c.Request.Context()
+	otelInstance := models.GlobalProxy.OtelInst
+	if otelInstance == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "OpenTelemetry instance not initialized"})
+		return
+	}
+	_, span := otelInstance.StartSpan(ctx, "UpdateMeta", []attribute.KeyValue{
+		attribute.String("request.method", c.Request.Method),
+		attribute.String("request.url", c.Request.URL.Path),
+	})
+	defer models.GlobalProxy.OtelInst.EndSpan(span)
 	var err1 error
 	if allow := services.MayIReadOrWrite(query.TableName, false, ""); !allow {
 		c.JSON(http.StatusOK, gin.H{})
@@ -221,7 +246,9 @@ func queryResponse(query models.Query, c *gin.Context) {
 		c.JSON(errors.HTTPResponse(err, query))
 	}
 	if hash != "" {
-		span.SetTag("qHash", hash)
+		span.SetAttributes(
+			attribute.String("qHash", hash),
+		)
 	}
 }
 
@@ -246,30 +273,23 @@ func QueryTable(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "OpenTelemetry instance not initialized"})
 		return
 	}
-	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
-	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
-	if err != nil || spanContext == nil {
-		logger.LogDebug(err)
-	}
-	requestSpan, requestCtx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
-	c.Request = c.Request.WithContext(requestCtx)
-	defer requestSpan.Finish()
-	addParentSpanID(c, requestSpan)
-	ctx, span := models.GlobalProxy.OtelInst.StartSpan(ctx, "GetItem", []attribute.KeyValue{
+
+	ctx, span := otelInstance.StartSpan(ctx, "Query", []attribute.KeyValue{
 		attribute.String("request.method", c.Request.Method),
 		attribute.String("request.url", c.Request.URL.Path),
 	})
 	defer models.GlobalProxy.OtelInst.EndSpan(span)
-	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "GetItem", startTime, err)
+	addParentSpanID(c, span)
+	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "Query", startTime, err)
 	var query models.Query
 	if err := c.ShouldBindJSON(&query); err != nil {
-		otelgo.AddAnnotation(ctx, "Query Validation failed")
+		otelgo.AddAnnotation(ctx, "Query API Validation failed")
 		c.JSON(errors.New("ValidationException", err).HTTPResponse(query))
 	} else {
-		otelgo.AddAnnotation(ctx, "Query validation passed, processing query")
+		otelgo.AddAnnotation(ctx, "Query API validation passed, processing query")
 		logger.LogInfo(query)
 		queryResponse(query, c)
-		otelgo.AddAnnotation(ctx, "Successfully processed query")
+		otelgo.AddAnnotation(ctx, "Successfully processed Query API")
 	}
 }
 
@@ -294,22 +314,13 @@ func GetItemMeta(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "OpenTelemetry instance not initialized"})
 		return
 	}
-	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
-	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
-	if err != nil || spanContext == nil {
-		logger.LogDebug(err)
-	}
-	requestSpan, requestCtx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
-	c.Request = c.Request.WithContext(requestCtx)
-	defer requestSpan.Finish()
-	addParentSpanID(c, requestSpan)
-	ctx, span := models.GlobalProxy.OtelInst.StartSpan(ctx, "GetItem", []attribute.KeyValue{
+	ctx, span := otelInstance.StartSpan(ctx, "GetItem", []attribute.KeyValue{
 		attribute.String("request.method", c.Request.Method),
 		attribute.String("request.url", c.Request.URL.Path),
 	})
 	defer models.GlobalProxy.OtelInst.EndSpan(span)
+	addParentSpanID(c, span)
 	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "GetItem", startTime, err)
-
 	// Add annotation for the GetItemMeta function start
 	otelgo.AddAnnotation(ctx, "Processing GetItemMeta Request")
 
@@ -321,7 +332,9 @@ func GetItemMeta(c *gin.Context) {
 		otelgo.AddAnnotation(ctx, "Binding GetItemMeta JSON Request")
 
 		// Set the table name as a tag for better observability
-		//span.SetTag("table", getItemMeta.TableName)
+		span.SetAttributes(
+			attribute.String("table", getItemMeta.TableName),
+		)
 		logger.LogDebug(getItemMeta)
 
 		// Check permissions for reading or writing
@@ -355,6 +368,7 @@ func GetItemMeta(c *gin.Context) {
 			// Convert changed columns to DynamoDB map
 			output, err := ChangeMaptoDynamoMap(changedColumns)
 			if err != nil {
+				otelgo.AddAnnotation(ctx, "Error while ChangeMaptoDynamoMap")
 				c.JSON(errors.HTTPResponse(err, "OutputChangedError"))
 			}
 			output = map[string]interface{}{
@@ -378,23 +392,30 @@ func GetItemMeta(c *gin.Context) {
 // @Router /batchGetWithProjection/ [post]
 // @Failure 401 {object} gin.H "{"errorMessage":"API access not allowed","errorCode": "E0005"}"
 func BatchGetItem(c *gin.Context) {
-	start := time.Now()
+	startTime := time.Now()
+	ctx := c.Request.Context()
+	var err error
 	defer PanicHandler(c)
 	defer c.Request.Body.Close()
-	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
-	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
-	if err != nil || spanContext == nil {
-		logger.LogDebug(err)
+	otelInstance := models.GlobalProxy.OtelInst
+	if otelInstance == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "OpenTelemetry instance not initialized"})
+		return
 	}
-	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
-	c.Request = c.Request.WithContext(ctx)
-	defer span.Finish()
+	ctx, span := otelInstance.StartSpan(ctx, "BatchGetItem", []attribute.KeyValue{
+		attribute.String("request.method", c.Request.Method),
+		attribute.String("request.url", c.Request.URL.Path),
+	})
+	defer models.GlobalProxy.OtelInst.EndSpan(span)
 	span = addParentSpanID(c, span)
+	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "BatchGetItem", startTime, err)
 
 	var batchGetMeta models.BatchGetMeta
 	if err1 := c.ShouldBindJSON(&batchGetMeta); err1 != nil {
+		otelgo.AddAnnotation(ctx, "Validation failed for BatchGetItem request")
 		c.JSON(errors.New("ValidationException", err1).HTTPResponse(batchGetMeta))
 	} else {
+		otelgo.AddAnnotation(ctx, "BatchGetItem validation passed, processing batch get request")
 		output := make(map[string]interface{})
 
 		for k, v := range batchGetMeta.RequestItems {
@@ -408,23 +429,26 @@ func BatchGetItem(c *gin.Context) {
 			var singleOutput interface{}
 			singleOutput, span, err = batchGetDataSingleTable(c.Request.Context(), batchGetWithProjectionMeta, span)
 			if err != nil {
+				otelgo.AddAnnotation(ctx, "BatchGetItem data retrieval failed")
 				c.JSON(errors.HTTPResponse(err, batchGetWithProjectionMeta))
 			}
 			currOutput, err := ChangeMaptoDynamoMap(singleOutput)
 			if err != nil {
+				otelgo.AddAnnotation(ctx, "BatchGetItem data transformation failed")
 				c.JSON(errors.HTTPResponse(err, batchGetWithProjectionMeta))
 			}
 			output[k] = currOutput["L"]
 		}
 
+		otelgo.AddAnnotation(ctx, "Successfully processed BatchGetItem request")
 		c.JSON(http.StatusOK, map[string]interface{}{"Responses": output})
 
-		if time.Since(start) > time.Second*1 {
+		if time.Since(startTime) > time.Second*1 {
 			go fmt.Println("BatchGetCall", batchGetMeta)
 		}
 	}
 }
-func batchGetDataSingleTable(ctx context.Context, batchGetWithProjectionMeta models.BatchGetWithProjectionMeta, span opentracing.Span) (interface{}, opentracing.Span, error) {
+func batchGetDataSingleTable(ctx context.Context, batchGetWithProjectionMeta models.BatchGetWithProjectionMeta, span trace.Span) (interface{}, trace.Span, error) {
 
 	var err1 error
 	batchGetWithProjectionMeta.KeyArray, err1 = ConvertDynamoArrayToMapArray(batchGetWithProjectionMeta.TableName, batchGetWithProjectionMeta.Keys)
@@ -434,9 +458,11 @@ func batchGetDataSingleTable(ctx context.Context, batchGetWithProjectionMeta mod
 	batchGetWithProjectionMeta.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(batchGetWithProjectionMeta.TableName, batchGetWithProjectionMeta.ExpressionAttributeNames)
 	res, err2 := services.BatchGetWithProjection(ctx, batchGetWithProjectionMeta.TableName, batchGetWithProjectionMeta.KeyArray, batchGetWithProjectionMeta.ProjectionExpression, batchGetWithProjectionMeta.ExpressionAttributeNames)
 
-	span = span.SetTag("table", batchGetWithProjectionMeta.TableName)
-	span = span.SetTag("batchRequestCount", len(batchGetWithProjectionMeta.Keys))
-	span = span.SetTag("batchResponseCount", len(res))
+	span.SetAttributes(
+		attribute.String("table", batchGetWithProjectionMeta.TableName),
+		attribute.Int("batchRequestCount", len(batchGetWithProjectionMeta.Keys)),
+		attribute.Int("batchResponseCount", len(res)),
+	)
 
 	if err2 != nil {
 		return nil, span, err2
@@ -465,21 +491,13 @@ func DeleteItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "OpenTelemetry instance not initialized"})
 		return
 	}
-	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
-	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
-	if err != nil || spanContext == nil {
-		logger.LogDebug(err)
-	}
-	requestSpan, requestCtx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
-	c.Request = c.Request.WithContext(requestCtx)
-	defer requestSpan.Finish()
-	addParentSpanID(c, requestSpan)
-	ctx, span := models.GlobalProxy.OtelInst.StartSpan(ctx, "GetItem", []attribute.KeyValue{
+	ctx, span := otelInstance.StartSpan(ctx, "DeleteItem", []attribute.KeyValue{
 		attribute.String("request.method", c.Request.Method),
 		attribute.String("request.url", c.Request.URL.Path),
 	})
 	defer models.GlobalProxy.OtelInst.EndSpan(span)
-	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "GetItem", startTime, err)
+	addParentSpanID(c, span)
+	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "DeleteItem", startTime, err)
 
 	otelgo.AddAnnotation(ctx, "Starting DeleteItem processing")
 	var deleteItem models.Delete
@@ -556,19 +574,12 @@ func Scan(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "OpenTelemetry instance not initialized"})
 		return
 	}
-	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
-	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
-	if err != nil || spanContext == nil {
-		logger.LogDebug(err)
-	}
-	requestSpan, requestCtx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
-	c.Request = c.Request.WithContext(requestCtx)
-	defer requestSpan.Finish()
-	addParentSpanID(c, requestSpan)
-	ctx, span := models.GlobalProxy.OtelInst.StartSpan(ctx, "Scan", []attribute.KeyValue{
+
+	ctx, span := otelInstance.StartSpan(ctx, "Scan", []attribute.KeyValue{
 		attribute.String("request.method", c.Request.Method),
 		attribute.String("request.url", c.Request.URL.Path),
 	})
+	addParentSpanID(c, span)
 	defer models.GlobalProxy.OtelInst.EndSpan(span)
 	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "Scan", startTime, err)
 
@@ -648,19 +659,11 @@ func Update(c *gin.Context) {
 		return
 	}
 
-	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
-	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
-	if err != nil || spanContext == nil {
-		logger.LogDebug(err)
-	}
-	requestSpan, requestCtx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
-	c.Request = c.Request.WithContext(requestCtx)
-	defer requestSpan.Finish()
-	addParentSpanID(c, requestSpan)
-	ctx, span := models.GlobalProxy.OtelInst.StartSpan(ctx, "UpdateItem", []attribute.KeyValue{
+	ctx, span := otelInstance.StartSpan(ctx, "UpdateItem", []attribute.KeyValue{
 		attribute.String("request.method", c.Request.Method),
 		attribute.String("request.url", c.Request.URL.Path),
 	})
+	addParentSpanID(c, span)
 	// Add annotation for span
 	otelgo.AddAnnotation(ctx, "Started processing UpdateItem request")
 	defer models.GlobalProxy.OtelInst.EndSpan(span)
@@ -727,28 +730,23 @@ func BatchWriteItem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "OpenTelemetry instance not initialized"})
 		return
 	}
-	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
-	spanContext, err := opentracing.GlobalTracer().Extract(opentracing.HTTPHeaders, carrier)
-	if err != nil || spanContext == nil {
-		logger.LogDebug(err)
-	}
-	requestSpan, requestCtx := opentracing.StartSpanFromContext(c.Request.Context(), c.Request.URL.RequestURI(), opentracing.ChildOf(spanContext))
-	c.Request = c.Request.WithContext(requestCtx)
-	defer requestSpan.Finish()
-	addParentSpanID(c, requestSpan)
-	ctx, span := models.GlobalProxy.OtelInst.StartSpan(ctx, "GetItem", []attribute.KeyValue{
+
+	ctx, span := otelInstance.StartSpan(ctx, "BatchWriteItem", []attribute.KeyValue{
 		attribute.String("request.method", c.Request.Method),
 		attribute.String("request.url", c.Request.URL.Path),
 	})
+	addParentSpanID(c, span)
 	defer models.GlobalProxy.OtelInst.EndSpan(span)
-	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "GetItem", startTime, err)
+	defer recordMetrics(ctx, models.GlobalProxy.OtelInst, "BatchWriteItem", startTime, err)
 
 	var batchWriteItem models.BatchWriteItem
 	var unprocessedBatchWriteItems models.BatchWriteItemResponse
 
 	if err1 := c.ShouldBindJSON(&batchWriteItem); err1 != nil {
+		otelgo.AddAnnotation(ctx, "Validation failed for BatchWriteItem request")
 		c.JSON(errors.New("ValidationException", err1).HTTPResponse(batchWriteItem))
 	} else {
+		otelgo.AddAnnotation(ctx, "BatchWriteItem validation passed, processing batch write request")
 		for key, value := range batchWriteItem.RequestItems {
 			if allow := services.MayIReadOrWrite(key, true, "BatchWriteItem"); !allow {
 				c.JSON(http.StatusOK, gin.H{})
@@ -793,6 +791,10 @@ func BatchWriteItem(c *gin.Context) {
 			}
 		}
 
+		otelgo.AddAnnotation(ctx, "Successfully processed BatchWriteItem request")
+		span.SetAttributes(
+			attribute.Int("unprocessedBatchWriteItems", len(unprocessedBatchWriteItems.UnprocessedItems)),
+		)
 		c.JSON(http.StatusOK, unprocessedBatchWriteItems)
 	}
 }
