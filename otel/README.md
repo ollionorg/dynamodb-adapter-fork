@@ -145,11 +145,11 @@ Run a curl command from the k8 pod to http://collector-ip:13133/health_check. Yo
 ![Alt text](./img/metrics-category.png)
 
 - Select options `Prometheus Target/Spanner`
-- To view the metrics for total number of requests, select option `prometheus/spanner_cassandra_adapter_<dbname>_request_count_total/counter`
+- To view the metrics for total number of requests, select option `prometheus/spanner_dynamodb_adapter_<dbname>_request_count_total/counter`
 
 ![Alt text](./img/metrics_total_requests.png)
 
-- To view the metrics for latency, select option `prometheus/spanner_cassandra_adapter_round_trip_latencies_milliseconds/histogram`
+- To view the metrics for latency, select option `prometheus/spanner_dynamodb_adapter_round_trip_latencies_milliseconds/histogram`
 
 ![Alt text](./img/metrics-latency.png)
 

@@ -374,6 +374,7 @@ func GetItemMeta(c *gin.Context) {
 			output = map[string]interface{}{
 				"Item": output,
 			}
+			otelgo.AddAnnotation(ctx, "Successfully processed GetItem request")
 			c.JSON(http.StatusOK, output)
 		} else {
 			c.JSON(errors.HTTPResponse(rowErr, getItemMeta))
