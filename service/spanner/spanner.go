@@ -46,6 +46,7 @@ func ParseDDL(updateDB bool) error {
 	if models.DbConfigMap == nil {
 		models.DbConfigMap = make(map[string]models.TableConfig)
 	}
+
 	if len(ms) > 0 {
 		for i := 0; i < len(ms); i++ {
 			tableName := ms[i]["tableName"].(string)
@@ -76,8 +77,6 @@ func ParseDDL(updateDB bool) error {
 				models.TableDDL[tableName] = make(map[string]string)
 				models.TableColumnMap[tableName] = []string{}
 			}
-
-			// Add column and data type to the TableConfig
 			models.TableColumnMap[tableName] = append(models.TableColumnMap[tableName], column)
 			models.TableDDL[tableName][column] = dataType
 		}
