@@ -29,8 +29,11 @@ import (
 // Config, storage and all other global objects are initialize
 func InitAll(filepath string) error {
 	config.InitConfig(filepath)
-	storage.InitializeDriver(context.Background())
-	err := spanner.ParseDDL(true)
+	err := storage.InitializeDriver(context.Background())
+	if err != nil {
+		return err
+	}
+	err = spanner.ParseDDL(true)
 	if err != nil {
 		return err
 	}

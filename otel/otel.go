@@ -123,7 +123,6 @@ func NewOpenTelemetry(ctx context.Context, config *OTelConfig) (*OpenTelemetry, 
 		if resp.StatusCode != 200 {
 			return otelInst, nil, errors.New("OTEL collector service is not up and running")
 		}
-		//logger.Info("OTEL health check COMPLETE")
 	}
 	var shutdownFuncs []func(context.Context) error
 	resource := otelInst.createResource(ctx)
@@ -132,7 +131,6 @@ func NewOpenTelemetry(ctx context.Context, config *OTelConfig) (*OpenTelemetry, 
 	if config.TracesEnabled {
 		otelInst.TracerProvider, err = otelInst.InitTracerProvider(ctx, resource)
 		if err != nil {
-			errors.New("error while initializing the tracer provider")
 			return nil, nil, err
 		}
 		otel.SetTracerProvider(otelInst.TracerProvider)
@@ -144,7 +142,6 @@ func NewOpenTelemetry(ctx context.Context, config *OTelConfig) (*OpenTelemetry, 
 		// Initialize MeterProvider
 		otelInst.MeterProvider, err = otelInst.InitMeterProvider(ctx, resource)
 		if err != nil {
-			errors.New("error while initializing the meter provider")
 			return nil, nil, err
 		}
 		otel.SetMeterProvider(otelInst.MeterProvider)

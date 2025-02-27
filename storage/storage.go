@@ -51,14 +51,16 @@ func InitializeDriver(ctx context.Context) error {
 
 	// OpenTelemetry configuration
 	otelConfig := otelgo.OTelConfig{
-		TracerEndpoint:   models.GlobalConfig.Otel.Traces.Endpoint,
-		MetricEndpoint:   models.GlobalConfig.Otel.Metrics.Endpoint,
-		ServiceName:      models.GlobalConfig.Otel.ServiceName,
-		MetricsEnabled:   models.GlobalConfig.Otel.Metrics.Enabled,
-		TracesEnabled:    models.GlobalConfig.Otel.Traces.Enabled,
-		TraceSampleRatio: models.GlobalConfig.Otel.Traces.SamplingRatio,
-		Database:         models.GlobalConfig.Spanner.DatabaseName,
-		Instance:         models.GlobalConfig.Spanner.InstanceID,
+		TracerEndpoint:     models.GlobalConfig.Otel.Traces.Endpoint,
+		MetricEndpoint:     models.GlobalConfig.Otel.Metrics.Endpoint,
+		ServiceName:        models.GlobalConfig.Otel.ServiceName,
+		MetricsEnabled:     models.GlobalConfig.Otel.Metrics.Enabled,
+		TracesEnabled:      models.GlobalConfig.Otel.Traces.Enabled,
+		TraceSampleRatio:   models.GlobalConfig.Otel.Traces.SamplingRatio,
+		Database:           models.GlobalConfig.Spanner.DatabaseName,
+		Instance:           models.GlobalConfig.Spanner.InstanceID,
+		HealthCheckEnabled: models.GlobalConfig.Otel.HealthCheck.Enabled,
+		HealthCheckEp:      models.GlobalConfig.Otel.HealthCheck.Endpoint,
 	}
 
 	otelInstance, shutdownOTel, err := otelgo.NewOpenTelemetry(ctx, &otelConfig)
