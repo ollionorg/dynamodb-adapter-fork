@@ -879,17 +879,20 @@ func ChangeMaptoDynamoMap(in interface{}) (map[string]interface{}, error) {
 		return nil, nil
 	}
 	outputObject := make(map[string]interface{})
-	err := convertMapToDynamoObject(outputObject, reflect.ValueOf(in), true)
+	err := convertMapToDynamoObject(outputObject, reflect.ValueOf(in), true, false)
 	return outputObject, err
 }
 
-func convertMapToDynamoObject(output map[string]interface{}, v reflect.Value, isFirstLevelField bool) error {
+func convertMapToDynamoObject(output map[string]interface{}, v reflect.Value, isFirstLevelField bool, change bool) error {
+	if change {
+		isFirstLevelField = false
+	}
 	v = valueElem(v)
 	switch v.Kind() {
 	case reflect.Map:
-		return convertMap(output, v, isFirstLevelField)
+		return convertMap(output, v, isFirstLevelField, change)
 	case reflect.Slice, reflect.Array:
-		return convertSlice(output, v, isFirstLevelField)
+		return convertSlice(output, v, isFirstLevelField, change)
 	case reflect.Chan, reflect.Func, reflect.UnsafePointer:
 		// unsupported
 	default:
@@ -910,25 +913,30 @@ func valueElem(v reflect.Value) reflect.Value {
 	return v
 }
 
-func convertMap(output map[string]interface{}, v reflect.Value, isFirstLevelField bool) error {
-	for _, key := range v.MapKeys() {
+func convertMap(output map[string]interface{}, v reflect.Value, isFirstLevelField bool, change bool) error {
+	for i, key := range v.MapKeys() {
 		keyName := fmt.Sprint(key.Interface())
 		if keyName == "" {
 			return errors.New("Key name cannot be empty")
 		}
-
 		elemVal := v.MapIndex(key)
 		elem := make(map[string]interface{})
-		_ = convertMapToDynamoObject(elem, elemVal, isFirstLevelField)
 
+		_ = convertMapToDynamoObject(elem, elemVal, isFirstLevelField, true)
 		output[keyName] = elem
+		if len(v.MapKeys()) == i+1 {
+			change = true
+		}
 	}
 	return nil
 }
 
-func convertSlice(output map[string]interface{}, v reflect.Value, isFirstLevelField bool) error {
+func convertSlice(output map[string]interface{}, v reflect.Value, isFirstLevelField bool, change bool) error {
 	if v.Kind() == reflect.Array && v.Len() == 0 {
 		return nil
+	}
+	if change {
+		isFirstLevelField = false
 	}
 
 	switch v.Type().Elem().Kind() {
@@ -974,7 +982,7 @@ func convertSlice(output map[string]interface{}, v reflect.Value, isFirstLevelFi
 		typeArray := []string{}
 		for i := 0; i < v.Len(); i++ {
 			elem := make(map[string]interface{})
-			err := convertMapToDynamoObject(elem, v.Index(i), isFirstLevelField)
+			err := convertMapToDynamoObject(elem, v.Index(i), isFirstLevelField, true)
 			v_type := valueElem(v.Index(i))
 			typeArray = append(typeArray, v_type.Kind().String())
 			if err != nil {
@@ -984,7 +992,6 @@ func convertSlice(output map[string]interface{}, v reflect.Value, isFirstLevelFi
 		}
 		if isFirstLevelField {
 			output["L"] = listVal
-			isFirstLevelField = false
 		} else {
 			newlistVal := []string{}
 			if allElementsMatch(typeArray, []string{reflect.String.String()}) {

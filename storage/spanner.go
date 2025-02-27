@@ -619,13 +619,11 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 	table = utils.ChangeTableNameForSpanner(table)
 	for i := 0; i < len(m); i++ {
 		for k, v := range m[i] {
-			// t, ok := ddl[k]
 			if strings.Contains(k, ".") {
 				pathfeilds := strings.Split(k, ".")
 				colName := pathfeilds[0]
 				t, ok := ddl[colName]
 				if t == "JSON" || t == "M" && ok {
-
 					var data map[string]interface{}
 					jsonData := spannerRow[i][colName]
 
@@ -674,18 +672,6 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 					}
 					m[i][k] = string(ba)
 				}
-			}
-			switch v := v.(type) {
-			case []interface{}:
-				// Serialize lists to JSON
-				jsonValue, err := json.Marshal(v)
-				if err != nil {
-					return fmt.Errorf("failed to serialize column %s to JSON: %v", k, err)
-				}
-				m[i][k] = string(jsonValue)
-			default:
-				// Assign other types as-is
-				m[i][k] = v
 			}
 		}
 		mutations[i] = spanner.InsertOrUpdateMap(table, m[i])

@@ -98,7 +98,7 @@ var (
 			"guid": {S: aws.String("123e4567-e89b-12d3-a456-value001")},
 		},
 	}
-	getItemTestForMapOutput = `{"Item":{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}}`
+	getItemTestForMapOutput = `{"Item":{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"albums":{"L":[{"B":"test"},{"S":"dummy_value"},{"N":"62536"}]},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}}`
 )
 
 // params for TestGetBatchAPI
@@ -287,8 +287,8 @@ var (
 			},
 		},
 	}
-	TestGetBatchForListOutput = `{"Responses":{"test_table":[{"category":{"S":"category"},"id":{"S":"testing"},"list_type":{"L":[{"S":"John Doe"},{"S":"62536"},{"BOOL":true}]},"rank_list":{"S":"rank_list"},"updated_at":{"S":"2024-12-04T11:02:02Z"}},{"category":{"S":"category1"},"id":{"S":"id"},"list_type":{"L":[{"S":"string_value"},{"S":"12345"},{"BOOL":true},{"L":[{"N":"1"},{"N":"2"},{"N":"3"}]},{"S":"testing"}]},"rank_list":{"S":"rank_list1"},"updated_at":{"S":"2024-12-04T11:02:02Z"}},{"category":{"S":"category2"},"id":{"S":"id2"},"list_type":{"L":[{"S":"test"},{"S":"dummy_value"},{"S":"62536"}]},"rank_list":{"S":"rank_list2"},"updated_at":{"S":"2024-12-04T11:02:02Z"}}]}}`
-	TestGetBatch11Output      = `{"Responses":{"mapdynamo":[{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}]}}`
+	TestGetBatchForListOutput = `{"Responses":{"test_table":[{"category":{"S":"category"},"id":{"S":"testing"},"list_type":{"L":[{"S":"John Doe"},{"S":"62536"},{"BOOL":true}]},"rank_list":{"S":"rank_list"},"updated_at":{"S":"2024-12-04T11:02:02Z"}},{"category":{"S":"category1"},"id":{"S":"id"},"list_type":{"L":[{"S":"string_value"},{"S":"12345"},{"BOOL":true},{"NS":["1","2","3"]},{"S":"testing"}]},"rank_list":{"S":"rank_list1"},"updated_at":{"S":"2024-12-04T11:02:02Z"}},{"category":{"S":"category2"},"id":{"S":"id2"},"list_type":{"SS":["test","dummy_value","62536"]},"rank_list":{"S":"rank_list2"},"updated_at":{"S":"2024-12-04T11:02:02Z"}}]}}`
+	TestGetBatch11Output      = `{"Responses":{"mapdynamo":[{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"albums":{"L":[{"B":"test"},{"S":"dummy_value"},{"N":"62536"}]},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}]}}`
 )
 
 // test Data for Query API
@@ -1023,7 +1023,7 @@ var (
 		},
 	}
 	PutItemTestForListOutput = `{"Attributes":{}}`
-	PutItemTestCase10Output  = `{"Attributes":{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}}`
+	PutItemTestCase10Output  = `{"Attributes":{"address":{"M":{"active":{"BOOL":true},"additional_details":{"M":{"additional_details_2":{"M":{"landmark_field":{"S":"near water tank road"},"landmark_field_number":{"N":"1001"}}},"apartment_number":{"S":"5B"},"landmark":{"S":"Near Central Park"},"landmark notes":{"B":"YmluYXJ5X2RhdGE="}}},"mobilenumber":{"N":"9035599089"},"notes":{"B":"YmluYXJ5X2RhdGE="},"permanent_address":{"S":"789 Elm St, Springfield, SP"},"present_address":{"S":"101 Maple Ave, Metropolis, MP"}}},"albums":{"L":[{"B":"test"},{"S":"dummy_value"},{"N":"62536"}]},"contact_ranking_list":{"S":"1,2,3"},"context":{"S":"user-profile"},"guid":{"S":"123e4567-e89b-12d3-a456-value001"},"name":{"S":"Jane Smith"}}}`
 )
 
 // Test Data DeleteItem API
@@ -2130,13 +2130,13 @@ func TestApi(t *testing.T) {
 
 	// this is done to maintain the order of the test cases
 	var testNames = []string{
-		// "GetItemAPI",
-		// "GetBatchAPI",
-		// "QueryAPI",
-		// "ScanAPI",
-		// "UpdateItemAPI",
-		// "PutItemAPI",
-		// "DeleteItemAPI",
+		"GetItemAPI",
+		"GetBatchAPI",
+		"QueryAPI",
+		"ScanAPI",
+		"UpdateItemAPI",
+		"PutItemAPI",
+		"DeleteItemAPI",
 		"BatchWriteItemAPI",
 	}
 

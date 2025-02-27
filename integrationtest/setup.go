@@ -130,7 +130,8 @@ func createDatabase(w io.Writer, db string) error {
 				context STRING(MAX) NOT NULL,
 				contact_ranking_list STRING(MAX),
 				name STRING(MAX),
-				address JSON
+				address JSON,
+				albums JSON
 			) PRIMARY KEY (guid)`,
 		},
 	})
@@ -192,6 +193,7 @@ func initData(w io.Writer, db string) error {
 			('mapdynamo', 'context', 'S', 'context', 'guid', '', 'context', 'mapdynamo', 'STRING(MAX)'),
 			('mapdynamo', 'contact_ranking_list', 'S', 'contact_ranking_list', 'guid', '', 'contact_ranking_list', 'mapdynamo', 'STRING(MAX)'),
 			('mapdynamo', 'name', 'S', 'name', 'guid', '', 'name', 'mapdynamo', 'STRING(MAX)'),
+			('mapdynamo', 'albums', 'M', 'albums', 'guid', '', 'albums', 'mapdynamo', 'JSON'),
 			('mapdynamo', 'address', 'M', 'address', 'guid', '', 'address', 'mapdynamo', 'JSON');`,
 		}
 		rowCount, err := txn.Update(ctx, stmt)
@@ -278,7 +280,7 @@ func initData(w io.Writer, db string) error {
 
 	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		stmt := spanner.Statement{
-			SQL: `INSERT INTO mapdynamo (guid, context, contact_ranking_list, name, address)
+			SQL: `INSERT INTO mapdynamo (guid, context, contact_ranking_list, name, address, albums)
 						VALUES (
 						'123e4567-e89b-12d3-a456-value001',
 						'user-profile',
@@ -299,7 +301,8 @@ func initData(w io.Writer, db string) error {
 						"notes": "YmluYXJ5X2RhdGE=",
 						"permanent_address": "789 Elm St, Springfield, SP",
 						"present_address": "101 Maple Ave, Metropolis, MP"
-						}'''
+						}''',
+						JSON '["test","dummy_value",62536]'
 						)`,
 		}
 		rowCount, err := txn.Update(ctx, stmt)
@@ -314,7 +317,7 @@ func initData(w io.Writer, db string) error {
 	}
 	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		stmt := spanner.Statement{
-			SQL: `INSERT INTO mapdynamo (guid, context, contact_ranking_list, name, address)
+			SQL: `INSERT INTO mapdynamo (guid, context, contact_ranking_list, name, address, albums)
 						VALUES (
 						'123e4567-e89b-12d3-a456-value011',
 						'user-profile',
@@ -335,7 +338,8 @@ func initData(w io.Writer, db string) error {
 						"notes": "YmluYXJ5X2RhdGE=",
 						"permanent_address": "789 Elm St, Springfield, SP",
 						"present_address": "101 Maple Ave, Metropolis, MP"
-						}'''
+						}''',
+						JSON '["test","dummy_value",62536]'
 						)`,
 		}
 		rowCount, err := txn.Update(ctx, stmt)
