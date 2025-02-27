@@ -25,17 +25,29 @@ import (
 )
 
 type SpannerConfig struct {
-	ProjectID        string `yaml:"project_id"`
-	InstanceID       string `yaml:"instance_id"`
-	DatabaseName     string `yaml:"database_name"`
-	QueryLimit       int64  `yaml:"query_limit"`
-	DynamoQueryLimit int32  `yaml:"dynamo_query_limit"` //dynamo_query_limit
+	ProjectID        string  `yaml:"project_id"`
+	InstanceID       string  `yaml:"instance_id"`
+	DatabaseName     string  `yaml:"database_name"`
+	QueryLimit       int64   `yaml:"query_limit"`
+	DynamoQueryLimit int32   `yaml:"dynamo_query_limit"` //dynamo_query_limit
+	Session          Session `yaml:"Session"`
+}
+
+type Session struct {
+	Min          uint64 `yaml:"min"`
+	Max          uint64 `yaml:"max"`
+	GrpcChannels int    `yaml:"grpcChannels"`
+}
+
+// Spanner read/write operation settings.
+type Operation struct {
+	MaxCommitDelay   uint64 `yaml:"maxCommitDelay"`
+	ReplayProtection bool   `yaml:"replayProtection"`
 }
 
 // OtelConfig defines the structure of the YAML configuration
 type OtelConfig struct {
-	MetricsEnabled           bool   `yaml:"metricsEnabled"`
-	TracesEnabled            bool   `yaml:"tracesEnabled"`
+	Enabled                  bool   `yaml:"enabled"`
 	EnabledClientSideMetrics bool   `yaml:"enabledClientSideMetrics"`
 	ServiceName              string `yaml:"serviceName"`
 	HealthCheck              struct {
@@ -43,9 +55,11 @@ type OtelConfig struct {
 		Endpoint string `yaml:"endpoint"`
 	} `yaml:"healthcheck"`
 	Metrics struct {
+		Enabled  bool   `yaml:"enabled"`
 		Endpoint string `yaml:"endpoint"`
 	} `yaml:"metrics"`
 	Traces struct {
+		Enabled       bool    `yaml:"enabled"`
 		Endpoint      string  `yaml:"endpoint"`
 		SamplingRatio float64 `yaml:"samplingRatio"`
 	} `yaml:"traces"`
@@ -55,11 +69,6 @@ type Config struct {
 	Spanner   SpannerConfig `yaml:"spanner"`
 	Otel      *OtelConfig   `yaml:"otel"`
 	UserAgent string
-}
-
-type Client struct {
-	ctx   context.Context
-	proxy *Proxy
 }
 
 type Proxy struct {

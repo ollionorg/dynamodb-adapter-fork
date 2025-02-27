@@ -28,6 +28,7 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	otelgo "github.com/cloudspannerecosystem/dynamodb-adapter/otel"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 )
@@ -53,8 +54,8 @@ func InitializeDriver(ctx context.Context) error {
 		TracerEndpoint:   models.GlobalConfig.Otel.Traces.Endpoint,
 		MetricEndpoint:   models.GlobalConfig.Otel.Metrics.Endpoint,
 		ServiceName:      models.GlobalConfig.Otel.ServiceName,
-		MetricsEnabled:   models.GlobalConfig.Otel.MetricsEnabled,
-		TracesEnabled:    models.GlobalConfig.Otel.TracesEnabled,
+		MetricsEnabled:   models.GlobalConfig.Otel.Metrics.Enabled,
+		TracesEnabled:    models.GlobalConfig.Otel.Traces.Enabled,
 		TraceSampleRatio: models.GlobalConfig.Otel.Traces.SamplingRatio,
 		Database:         models.GlobalConfig.Spanner.DatabaseName,
 		Instance:         models.GlobalConfig.Spanner.InstanceID,
@@ -70,18 +71,45 @@ func InitializeDriver(ctx context.Context) error {
 		}
 	}()
 
+	spc := spanner.DefaultSessionPoolConfig
+
+	if models.GlobalConfig.Spanner.Session.Min != 0 {
+		spc.MinOpened = models.GlobalConfig.Spanner.Session.Min
+	}
+
+	if models.GlobalConfig.Spanner.Session.Max != 0 {
+		spc.MaxOpened = models.GlobalConfig.Spanner.Session.Max
+	}
+
+	spc.InactiveTransactionRemovalOptions = spanner.InactiveTransactionRemovalOptions{
+		ActionOnInactiveTransaction: spanner.WarnAndClose,
+	}
+
+	cfg := spanner.ClientConfig{SessionPoolConfig: spc, UserAgent: models.GlobalConfig.UserAgent}
+
+	// If OpenTelemetry is provided, configure instrumentation
+	if models.GlobalConfig.Otel.Enabled && otelInstance != nil {
+		if models.GlobalConfig.Otel.EnabledClientSideMetrics {
+			// Enable OpenTelemetry metrics before injecting meter provider.
+			spanner.EnableOpenTelemetryMetrics()
+		}
+		// Setting the GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING env varibale to 'opentelemetry' will enable traces on spanner client library.
+		os.Setenv("GOOGLE_API_GO_EXPERIMENTAL_TELEMETRY_PLATFORM_TRACING", "opentelemetry")
+
+		// Set up OpenTelemetry traces and metrics
+		otel.SetTracerProvider(otelInstance.TracerProvider)
+
+		// Add OpenTelemetry instrumentation to Spanner client configuration
+		cfg.OpenTelemetryMeterProvider = otelInstance.MeterProvider
+	}
 	// Spanner client initialization
 	database := fmt.Sprintf("projects/%s/instances/%s/databases/%s",
 		models.GlobalConfig.Spanner.ProjectID,
 		models.GlobalConfig.Spanner.InstanceID,
 		models.GlobalConfig.Spanner.DatabaseName,
 	)
-	spannerClient, err := spanner.NewClientWithConfig(ctx, database, spanner.ClientConfig{
-		SessionPoolConfig:          spanner.DefaultSessionPoolConfig,
-		UserAgent:                  "dynamo-adapter/1",
-		OpenTelemetryMeterProvider: otelInstance.MeterProvider,
-	},
-		//	option.WithGRPCConnectionPool(models.GlobalConfig.Spanner.NumOfChannels),
+	spannerClient, err := spanner.NewClientWithConfig(ctx, database, cfg,
+		option.WithGRPCConnectionPool(models.GlobalConfig.Spanner.Session.GrpcChannels),
 		option.WithGRPCDialOption(grpc.WithConnectParams(grpc.ConnectParams{
 			MinConnectTimeout: 10 * time.Second,
 		})),
@@ -93,18 +121,12 @@ func InitializeDriver(ctx context.Context) error {
 	storage.spannerClient[models.GlobalConfig.Spanner.InstanceID] = spannerClient
 	logger.LogInfo("Spanner client initialized successfully")
 
-	if models.GlobalConfig.Otel == nil {
-		models.GlobalConfig.Otel = &models.OtelConfig{
-			MetricsEnabled: false,
-			TracesEnabled:  false,
-		}
-	} else {
-		if models.GlobalConfig.Otel.TracesEnabled {
-			if models.GlobalConfig.Otel.Traces.SamplingRatio < 0 || models.GlobalConfig.Otel.Traces.SamplingRatio > 1 {
-				fmt.Errorf("Sampling Ratio for Otel Traces should be between 0 and 1]")
-			}
+	if models.GlobalConfig.Otel.Traces.Enabled {
+		if models.GlobalConfig.Otel.Traces.SamplingRatio < 0 || models.GlobalConfig.Otel.Traces.SamplingRatio > 1 {
+			return fmt.Errorf("sampling ratio for Otel Traces should be between 0 and 1]")
 		}
 	}
+
 	models.GlobalProxy = &models.Proxy{}
 	models.GlobalProxy.OtelInst = otelInstance
 	models.GlobalProxy.OtelShutdown = shutdownOTel

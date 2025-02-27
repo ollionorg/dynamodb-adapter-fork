@@ -29,6 +29,10 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
 )
 
+const (
+	proxyReleaseVersion = "v1.0.0"
+)
+
 // Configuration struct
 type Configuration struct {
 	GoogleProjectID string
@@ -52,6 +56,7 @@ func InitConfig(filepath string) {
 	if err != nil {
 		log.Printf("failed to read config file: %v", err)
 	}
+	GlobalConfig.UserAgent = "dynamodb-adapter/" + proxyReleaseVersion
 	models.GlobalConfig = GlobalConfig
 }
 

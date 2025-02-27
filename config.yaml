@@ -4,6 +4,16 @@ spanner:
   database_name: ${DATABASE_ID}
   query_limit: ${QUERY_LIMIT}
   dynamo_query_limit: ${DYNAMODB_QUERY_LIMIT}
+  Session:
+    # Minimum number of sessions that Spanner pool will always maintain by the session pool.
+    # Defaults to 100.
+    min: 100
+    # Maximum number of sessions that Spanner pool will have.
+    # Defaults to 400.
+    max: 200
+    # Number of channels utilized by the Spanner client.
+    # Defaults to 4.
+    grpcChannels: 4
 otel:
   # Set enabled to true or false for OTEL metrics and traces
   enabled: True
@@ -26,9 +36,11 @@ otel:
     endpoint: YOUR_OTEL_COLLECTOR_HEALTHCHECK_ENDPOINT
   metrics:
     # Collector service endpoint
+    enabled: False
     endpoint: YOUR_OTEL_COLLECTOR_SERVICE_ENDPOINT
   traces:
     # Collector service endpoint
+    enabled: False
     endpoint: YOUR_OTEL_COLLECTOR_SERVICE_ENDPOINT
     #Sampling ratio should be between 0 and 1. Here 0.05 means 5/100 Sampling ratio.
     samplingRatio: YOUR_SAMPLING_RATIO
