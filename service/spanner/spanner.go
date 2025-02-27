@@ -81,13 +81,11 @@ func ParseDDL(updateDB bool) error {
 				// Initialize TableConfig if it doesn't exist
 				models.DbConfigMap[tableName] = models.TableConfig{
 					ActualTable:      tableName,
-					PartitionKey:     "contact_ranking_list",
-					SpannerIndexName: "contact_ranking_list",
+					PartitionKey:     "test_partition_key",
+					SpannerIndexName: "test_partition_key",
 				}
 			}
 			// Add column and data type to the TableConfig
-			// models.DbConfigMap[tableName].Columns = append(models.DbConfigMap[tableName].Columns, column)
-			// models.DbConfigMap[tableName].DataTypes[column] = dataType
 			models.TableColumnMap[tableName] = append(models.TableColumnMap[tableName], column)
 			models.TableDDL[tableName][column] = dataType
 		}

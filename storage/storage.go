@@ -159,6 +159,6 @@ func GetStorageInstance() *Storage {
 	return storage
 }
 
-func (s Storage) getSpannerClient(tableName string) *spanner.Client {
+func (s Storage) getSpannerClient(_ string) *spanner.Client {
 	return s.spannerClient[models.GlobalConfig.Spanner.InstanceID]
 }

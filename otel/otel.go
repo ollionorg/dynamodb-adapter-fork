@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 Google LLC
+ * Copyright (C) 2025 Google LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
@@ -19,6 +19,7 @@ package otelgo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -35,7 +36,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 )
 
 type Attributes struct {
@@ -96,7 +96,6 @@ type OpenTelemetry struct {
 	Meter          metric.Meter
 	requestCount   metric.Int64Counter   // Default noop
 	requestLatency metric.Int64Histogram // Default noop
-	Logger         *zap.Logger
 	attributeMap   []attribute.KeyValue
 }
 
@@ -149,24 +148,26 @@ func NewOpenTelemetry(ctx context.Context, config *OTelConfig) (*OpenTelemetry, 
 		shutdownFuncs = append(shutdownFuncs, otelInst.MeterProvider.Shutdown)
 	}
 	shutdown := shutdownOpenTelemetryComponents(shutdownFuncs)
-	otelInst.requestCount, err = otelInst.Meter.Int64Counter(requestCountMetric, metric.WithDescription("Records metric for number of query requests coming in"), metric.WithUnit("1"))
-	if err != nil {
-		//logger.Error("error during registering instrument for metric spanner/dynamo_adapter/request_count", zap.Error(err))
-		return otelInst, shutdown, err
+	if otelInst.Meter != nil {
+		otelInst.requestCount, err = otelInst.Meter.Int64Counter(requestCountMetric, metric.WithDescription("Records metric for number of query requests coming in"), metric.WithUnit("1"))
+		if err != nil {
+			return otelInst, shutdown, err
+		}
+
+		otelInst.requestLatency, err = otelInst.Meter.Int64Histogram(latencyMetric,
+			metric.WithDescription("Records latency for all query operations"),
+			metric.WithExplicitBucketBoundaries(0.0, 0.0010, 0.0013, 0.0016, 0.0020, 0.0024, 0.0031, 0.0038, 0.0048, 0.0060,
+				0.0075, 0.0093, 0.0116, 0.0146, 0.0182, 0.0227, 0.0284, 0.0355, 0.0444, 0.0555, 0.0694, 0.0867,
+				0.1084, 0.1355, 0.1694, 0.2118, 0.2647, 0.3309, 0.4136, 0.5170, 0.6462, 0.8078, 1.0097, 1.2622,
+				1.5777, 1.9722, 2.4652, 3.0815, 3.8519, 4.8148, 6.0185, 7.5232, 9.4040, 11.7549, 14.6937, 18.3671,
+				22.9589, 28.6986, 35.8732, 44.8416, 56.0519, 70.0649, 87.5812, 109.4764, 136.8456, 171.0569, 213.8212,
+				267.2765, 334.0956, 417.6195, 522.0244, 652.5304),
+			metric.WithUnit("ms"))
+		if err != nil {
+			return otelInst, shutdown, err
+		}
 	}
-	otelInst.requestLatency, err = otelInst.Meter.Int64Histogram(latencyMetric,
-		metric.WithDescription("Records latency for all query operations"),
-		metric.WithExplicitBucketBoundaries(0.0, 0.0010, 0.0013, 0.0016, 0.0020, 0.0024, 0.0031, 0.0038, 0.0048, 0.0060,
-			0.0075, 0.0093, 0.0116, 0.0146, 0.0182, 0.0227, 0.0284, 0.0355, 0.0444, 0.0555, 0.0694, 0.0867,
-			0.1084, 0.1355, 0.1694, 0.2118, 0.2647, 0.3309, 0.4136, 0.5170, 0.6462, 0.8078, 1.0097, 1.2622,
-			1.5777, 1.9722, 2.4652, 3.0815, 3.8519, 4.8148, 6.0185, 7.5232, 9.4040, 11.7549, 14.6937, 18.3671,
-			22.9589, 28.6986, 35.8732, 44.8416, 56.0519, 70.0649, 87.5812, 109.4764, 136.8456, 171.0569, 213.8212,
-			267.2765, 334.0956, 417.6195, 522.0244, 652.5304),
-		metric.WithUnit("ms"))
-	if err != nil {
-		//logger.Error("error during registering instrument for metric spanner/dynamo_adapter/roundtrip_latencies", zap.Error(err))
-		return otelInst, shutdown, err
-	}
+
 	return otelInst, shutdown, nil
 }
 
@@ -187,13 +188,15 @@ func shutdownOpenTelemetryComponents(shutdownFuncs []func(context.Context) error
 // configures a gRPC exporter for trace data, pointing to the configured TracerEndpoint.
 // It returns an initialized TracerProvider or an error if the initialization fails.
 func (o *OpenTelemetry) InitTracerProvider(ctx context.Context, resource *resource.Resource) (*sdktrace.TracerProvider, error) {
+	if o.Config.TracerEndpoint == "" {
+		return nil, fmt.Errorf("missing TracerEndpoint")
+	}
 	sampler := sdktrace.TraceIDRatioBased(o.Config.TraceSampleRatio)
 	traceExporter, err := otlptracegrpc.New(ctx,
 		otlptracegrpc.WithEndpoint(o.Config.TracerEndpoint),
 		otlptracegrpc.WithInsecure(),
 	)
 	if err != nil {
-		o.Logger.Error("error while initializing the tracer", zap.Error(err))
 		return nil, err
 	}
 
@@ -210,13 +213,15 @@ func (o *OpenTelemetry) InitTracerProvider(ctx context.Context, resource *resour
 // It returns an initialized MeterProvider or an error if the setup fails. The MeterProvider is responsible for collecting and
 // exporting metrics from your application to an OpenTelemetry Collector or directly to a backend that supports OTLP over gRPC for metrics.
 func (o *OpenTelemetry) InitMeterProvider(ctx context.Context, resource *resource.Resource) (*sdkmetric.MeterProvider, error) {
+	if o.Config.MetricEndpoint == "" {
+		return nil, fmt.Errorf("missing MetricEndpoint")
+	}
 	var views []sdkmetric.View
 	me, err := otlpmetricgrpc.New(ctx,
 		otlpmetricgrpc.WithEndpoint(o.Config.MetricEndpoint),
 		otlpmetricgrpc.WithInsecure(),
 	)
 	if err != nil {
-		o.Logger.Error("error while initializing the meter", zap.Error(err))
 		return nil, err
 	}
 
