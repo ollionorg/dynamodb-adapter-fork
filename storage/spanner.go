@@ -51,7 +51,6 @@ const (
 	SpannerDelAnnotation          = "Calling SpannerDel Method"
 	SpannerRemoveAnnotation       = "Calling SpannerRemove Method"
 	SpannerBatchPutAnnotation     = "Calling SpannerBatchPut Method"
-	SpannerRemoveAnnotation       = "Calling SpannerRemove Method"
 )
 
 // SpannerBatchGet - fetch all rows
