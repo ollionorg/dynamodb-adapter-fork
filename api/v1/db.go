@@ -140,7 +140,7 @@ func UpdateMeta(c *gin.Context) {
 			meta.ConditionExpression = strings.ReplaceAll(meta.ConditionExpression, k, v)
 		}
 
-		res, err := put(c.Request.Context(), meta.TableName, meta.AttrMap, nil, meta.ConditionExpression, meta.ExpressionAttributeMap)
+		res, err := put(ctx, meta.TableName, meta.AttrMap, nil, meta.ConditionExpression, meta.ExpressionAttributeMap)
 		if err != nil {
 			c.JSON(errors.HTTPResponse(err, meta))
 		} else {
@@ -219,7 +219,7 @@ func queryResponse(query models.Query, c *gin.Context) {
 	}
 	query.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(query.TableName, query.ExpressionAttributeNames)
 	query = ReplaceHashRangeExpr(query)
-	res, hash, err := services.QueryAttributes(c.Request.Context(), query)
+	res, hash, err := services.QueryAttributes(ctx, query)
 	if err == nil {
 		finalResult := make(map[string]interface{})
 		changedOutput := ChangeQueryResponseColumn(query.TableName, res)
@@ -357,7 +357,7 @@ func GetItemMeta(c *gin.Context) {
 
 		// Add annotation before calling the Get service
 		otelgo.AddAnnotation(ctx, "Calling GetWithProjection Service")
-		res, rowErr := services.GetWithProjection(c.Request.Context(), getItemMeta.TableName, getItemMeta.PrimaryKeyMap, getItemMeta.ProjectionExpression, getItemMeta.ExpressionAttributeNames)
+		res, rowErr := services.GetWithProjection(ctx, getItemMeta.TableName, getItemMeta.PrimaryKeyMap, getItemMeta.ProjectionExpression, getItemMeta.ExpressionAttributeNames)
 
 		// Process the response
 		if rowErr == nil {
@@ -539,9 +539,9 @@ func DeleteItem(c *gin.Context) {
 		}
 
 		otelgo.AddAnnotation(ctx, "Fetching current item for deletion")
-		oldRes, _ := services.GetWithProjection(c.Request.Context(), deleteItem.TableName, deleteItem.PrimaryKeyMap, "", nil)
+		oldRes, _ := services.GetWithProjection(ctx, deleteItem.TableName, deleteItem.PrimaryKeyMap, "", nil)
 		otelgo.AddAnnotation(ctx, "Attempting to delete item")
-		err := services.Delete(c.Request.Context(), deleteItem.TableName, deleteItem.PrimaryKeyMap, deleteItem.ConditionExpression, deleteItem.ExpressionAttributeMap, nil)
+		err := services.Delete(ctx, deleteItem.TableName, deleteItem.PrimaryKeyMap, deleteItem.ConditionExpression, deleteItem.ExpressionAttributeMap, nil)
 		if err == nil {
 			otelgo.AddAnnotation(ctx, "Item deleted successfully")
 			output, _ := ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(deleteItem.TableName, oldRes))
@@ -611,7 +611,7 @@ func Scan(c *gin.Context) {
 
 		logger.LogDebug(meta)
 		otelgo.AddAnnotation(ctx, "Calling Scan Service")
-		res, err := services.Scan(c.Request.Context(), meta)
+		res, err := services.Scan(ctx, meta)
 		if err == nil {
 			changedOutput := ChangeQueryResponseColumn(meta.TableName, res)
 			otelgo.AddAnnotation(ctx, "Changing Items to Dynamo Map")
