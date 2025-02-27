@@ -903,6 +903,11 @@ func ChangeMaptoDynamoMap(in interface{}) (map[string]interface{}, error) {
 
 func convertMapToDynamoObject(output map[string]interface{}, v reflect.Value) error {
 	v = valueElem(v)
+
+	if !v.IsValid() {
+		output["NULL"] = true // Handle NULL directly here
+		return nil
+	}
 	switch v.Kind() {
 	case reflect.Map:
 		return convertMap(output, v)
@@ -937,9 +942,10 @@ func convertMap(output map[string]interface{}, v reflect.Value) error {
 
 		elemVal := v.MapIndex(key)
 		elem := make(map[string]interface{})
-		_ = convertMapToDynamoObject(elem, elemVal)
 
+		_ = convertMapToDynamoObject(elem, elemVal)
 		output[keyName] = elem
+
 	}
 	return nil
 }
