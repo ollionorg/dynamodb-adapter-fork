@@ -62,6 +62,8 @@ DynamoDB Adapter currently supports the following DynamoDB data types
 | `L` (List Type)               | `JSON` |
 | `M` (Map Type)                | `JSON` |
 
+Note: Map and List datatypes does not support the Set datatypes.
+
 ## Configuration
 
 ### config.yaml

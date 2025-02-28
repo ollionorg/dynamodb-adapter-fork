@@ -654,7 +654,7 @@ var (
 			":val1": {N: aws.String("200")}, // Filter for NULL d_name
 		},
 	}
-	ScanTestCase14Output = `{"Count":1,"Items":[{"d_id":{"N":"200"},"d_name":{"NULL":true},"d_specialization":{"S":"BA"}}]}`
+	ScanTestCase14Output = `{"Count":1,"Items":[{"d_id":{"N":"200"},"d_name":{"NULL":true},"d_specialization":{"S":"BA"}}],"LastEvaluatedKey":null}`
 	ScanTestCaseListName = "15: List Type"
 	ScanTestCaseList     = models.ScanMeta{
 		TableName: "test_table",
@@ -883,7 +883,7 @@ var (
 			"#ag": "age",
 		},
 	}
-	PutItemTestCase3Output = `{"Attributes":{"address":{"S":"Shamli"},"age":{"N":"11"},"emp_id":{"N":"1"},"first_name":{"S":"Marc"},"last_name":{"S":"Richards"},"phone_numbers":{"SS":["+1111111111","+1222222222"]},"profile_pics":{"BS":["U29tZUJ5dGVzRGF0YTE=","U29tZUJ5dGVzRGF0YTI="]},"salaries":{"NS":["1000.5","2000.75"]}}}`
+	PutItemTestCase3Output = `{"Attributes":{"address":{"S":"Shamli"},"age":{"N":"11"},"emp_id":{"N":"1"},"first_name":{"S":"Marc"},"last_name":{"S":"Richards"},"phone_numbers":{"SS":["+1222222222",+1111111111""]},"profile_pics":{"BS":["U29tZUJ5dGVzRGF0YTE=","U29tZUJ5dGVzRGF0YTI="]},"salaries":{"NS":["1000.5","2000.75"]}}}`
 
 	PutItemTestCase4Name = "4: ConditionExpression with ExpressionAttributeValues"
 	PutItemTestCase4     = models.Meta{
@@ -897,7 +897,7 @@ var (
 			":val2": {N: aws.String("9")},
 		},
 	}
-	PutItemTestCase4Output = `{"Attributes":{"address":{"S":"Shamli"},"age":{"N":"10"},"emp_id":{"N":"1"},"first_name":{"S":"Marc"},"last_name":{"S":"Richards"},"phone_numbers":{"SS":["+1111111111","+1222222222"]},"profile_pics":{"BS":["U29tZUJ5dGVzRGF0YTE=","U29tZUJ5dGVzRGF0YTI="]},"salaries":{"NS":["1000.5","2000.75"]}}}`
+	PutItemTestCase4Output = `{"Attributes":{"address":{"S":"Shamli"},"age":{"N":"10"},"emp_id":{"N":"1"},"first_name":{"S":"Marc"},"last_name":{"S":"Richards"},"phone_numbers":{"SS":["+1222222222",+1111111111""]},"profile_pics":{"BS":["U29tZUJ5dGVzRGF0YTE=","U29tZUJ5dGVzRGF0YTI="]},"salaries":{"NS":["1000.5","2000.75"]}}}`
 
 	//400 bad request
 	PutItemTestCase5Name = "5: ConditionExpression without ExpressionAttributeValues"

@@ -740,7 +740,7 @@ func convertFrom(a *dynamodb.AttributeValue, tableName string, level int16) inte
 	}
 	if a.SS != nil {
 		if level > 1 {
-			panic("M does not support String Set[SS]type value")
+			panic("The Map and List types do not support String Set (SS) values. Please use the List type instead.")
 		} else {
 			uniqueStrings := make(map[string]struct{})
 			for _, v := range a.SS {
@@ -757,7 +757,7 @@ func convertFrom(a *dynamodb.AttributeValue, tableName string, level int16) inte
 	}
 	if a.NS != nil {
 		if level > 1 {
-			panic("M does not support Number Set[NS]type value")
+			panic("The Map and List types do not support Number Set (NS) values. Please use the List type instead.")
 		} else {
 			l := []float64{}
 			numberMap := make(map[string]struct{})
@@ -776,7 +776,7 @@ func convertFrom(a *dynamodb.AttributeValue, tableName string, level int16) inte
 	}
 	if a.BS != nil {
 		if level > 1 {
-			panic("M does not support Binary Set[BS]type value")
+			panic("The Map and List types do not support Binary Set (BS) values. Please use the List type instead.")
 		} else {
 			// Handle Binary Set
 			binarySet := [][]byte{}

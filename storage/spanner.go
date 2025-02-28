@@ -626,35 +626,12 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 				t, ok := ddl[colName]
 				if t == "JSON" || t == "M" && ok {
 
-					var data map[string]interface{}
-					jsonData := spannerRow[i][colName]
-
-					// jsonData should be assumed to be a JSON object. If it's already marshaled, just convert it to a string.
-					jsonBytes, err := json.Marshal(jsonData) // Only if jsonData needs to be marshaled
-					if err != nil {
-						log.Fatalf("error marshalling JSON: %v", err)
-					}
-
-					// Unmarshal into a map for manipulation
-					if err := json.Unmarshal(jsonBytes, &data); err != nil {
-						log.Fatalf("Error unmarshalling JSON: %v", err)
-					}
-
-					// Updating the field
-					if updated := updateFieldByPath(data, k, v); updated {
-						log.Println("Update successful")
-					} else {
-						log.Println("Update failed: path not found")
-					}
-
-					// Marshal back to JSON after the update
-					updatedJSON, err := json.MarshalIndent(data, "", "  ")
-					if err != nil {
-						return errors.New("Error marshaling JSON:", err)
-					}
-
+					var err error
 					// Store the updated JSON in the map
-					m[i][colName] = string(updatedJSON)
+					m[i][colName], err = updateMapColumnObject(spannerRow[i], colName, k, v)
+					if err != nil {
+						return errors.New("Error updating the Map object:", err)
+					}
 					delete(m[i], k)
 				}
 			} else {
@@ -666,7 +643,7 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 					}
 					m[i][k] = ba
 				}
-				if t == "JSON" || t == "M" && ok {
+				if t == "M" && ok {
 					ba, err := json.MarshalIndent(v, "", "  ")
 					if err != nil {
 						return errors.New("ValidationException", err)
@@ -703,38 +680,12 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 			pathfeilds := strings.Split(k, ".")
 			colName := pathfeilds[0]
 			t, ok := ddl[colName]
-			if t == "JSON" || t == "M" && ok {
-
-				var data map[string]interface{}
-				jsonData := spannerRow[colName]
-
-				// jsonData should be assumed to be a JSON object. If it's already marshaled, just convert it to a string.
-				jsonBytes, err := json.Marshal(jsonData) // Only if jsonData needs to be marshaled
+			if t == "M" && ok {
+				var err error
+				m[colName], err = updateMapColumnObject(spannerRow, colName, k, v)
 				if err != nil {
-					log.Fatalf("error marshalling JSON: %v", err)
+					return errors.New("Error updating the Map:", err)
 				}
-
-				// Unmarshal into a map for manipulation
-				if err := json.Unmarshal(jsonBytes, &data); err != nil {
-					log.Fatalf("Error unmarshalling JSON: %v", err)
-				}
-
-				// Updating the field
-				if updated := updateFieldByPath(data, k, v); updated {
-					log.Println("Update successful")
-				} else {
-					log.Println("Update failed: path not found")
-				}
-
-				// Marshal back to JSON after the update
-				updatedJSON, err := json.MarshalIndent(data, "", "  ")
-				if err != nil {
-					return errors.New("Error marshaling JSON:", err)
-				}
-
-				// Store the updated JSON in the map
-				strigngyfiedJSON := string(updatedJSON)
-				m[colName] = strigngyfiedJSON
 				delete(m, k)
 			}
 		} else {
@@ -764,6 +715,42 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 		return e
 	}
 	return nil
+}
+
+// updateMapColumnObject updates the fields in a given JSON object for the Map Datatype
+func updateMapColumnObject(spannerRow map[string]interface{}, colName string, k string, v interface{}) (string, error) {
+	var data map[string]interface{}
+	jsonData := spannerRow[colName]
+
+	// jsonData should be assumed to be a JSON object. If it's already marshaled, just convert it to a string.
+	jsonBytes, err := json.Marshal(jsonData) // Only if jsonData needs to be marshaled
+	if err != nil {
+		log.Fatalf("error marshalling JSON: %v", err)
+	}
+
+	// Unmarshal into a map for manipulation
+	if err := json.Unmarshal(jsonBytes, &data); err != nil {
+		log.Fatalf("Error unmarshalling JSON: %v", err)
+	}
+
+	// Updating the field
+	if updated := utils.UpdateFieldByPath(data, k, v); updated {
+		log.Println("Update successful")
+	} else {
+		log.Println("Update failed: path not found")
+	}
+
+	fmt.Println("data-->", data)
+	// Marshal back to JSON after the update
+	updatedJSON, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "", errors.New("Error marshaling JSON:", err)
+	}
+	strigngyfiedJSON := string(updatedJSON)
+
+	strigngyfiedJSON = strings.ReplaceAll(strigngyfiedJSON, `\n`, "")
+	strigngyfiedJSON = strings.ReplaceAll(strigngyfiedJSON, `\"`, `"`)
+	return strigngyfiedJSON, nil
 }
 
 func evaluateConditionalExpression(ctx context.Context, t *spanner.ReadWriteTransaction, table string, m map[string]interface{}, e *models.Eval, expr *models.UpdateExpressionCondition) (bool, error) {
@@ -973,24 +960,8 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 			err = parseNullColumn(r, i, k, singleRow)
 		case "L":
 			err = parseListColumn(r, i, k, singleRow)
-		case "M", "JSON":
-			var s spanner.NullJSON
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, spannerRow, errors.New("ValidationException", err, k)
-			}
-
-			if !s.IsNull() {
-				var decodedData interface{}
-				if err = json.Unmarshal([]byte(s.String()), &decodedData); err != nil {
-					return nil, spannerRow, errors.New("JSONParseException", err)
-				}
-				singleRow[k] = parseNestedJSON(decodedData)
-				spannerRow[k] = decodedData
-			}
+		case "M":
+			err = parseMapColumn(r, i, k, singleRow, spannerRow)
 		default:
 			return nil, nil, errors.New("TypeNotFound", err, k)
 		}
@@ -1024,8 +995,8 @@ func parseStringColumn(r *spanner.Row, idx int, col string, row map[string]inter
 		return nil
 	} else {
 		row[col] = s.StringVal
-		if strings.HasSuffix(s.StringVal, "=") && isValidBase64(s.StringVal) {
-			res, err := parseBytes(r, idx, col)
+		if strings.HasSuffix(s.StringVal, "=") && utils.IsValidBase64(s.StringVal) {
+			res, err := utils.ParseBytes(r, idx, col)
 			if err != nil {
 				return err
 			}
@@ -1205,6 +1176,25 @@ func parseNumberArrayColumn(r *spanner.Row, idx int, col string, row map[string]
 	return nil
 }
 
+// parseMapColumn parses a column of type for JSON data
+func parseMapColumn(r *spanner.Row, idx int, col string, row map[string]interface{}, spannerRow map[string]interface{}) error {
+	var s spanner.NullJSON
+	err := r.Column(idx, &s)
+	if err != nil {
+		return errors.New("ValidationException", err, col)
+	}
+
+	if !s.IsNull() {
+		var decodedData interface{}
+		if err = json.Unmarshal([]byte(s.String()), &decodedData); err != nil {
+			return errors.New("JSONParseException", err)
+		}
+		row[col] = utils.ParseNestedJSON(decodedData)
+		spannerRow[col] = decodedData
+	}
+	return err
+}
+
 // parseListColumn parses a list column from a Spanner row.
 //
 // Args:
@@ -1359,144 +1349,4 @@ func checkInifinty(value float64, logData interface{}) error {
 	}
 
 	return nil
-}
-
-// isValidJSONObject checks if a string is a valid JSON object
-func isValidJSONObject(s string) error {
-	var js map[string]interface{}
-	err := json.Unmarshal([]byte(s), &js)
-	return err
-}
-
-func isValidBase64(s string) bool {
-	if _, err := base64.StdEncoding.DecodeString(s); err != nil {
-		return false
-	}
-	return true
-}
-func parseBytes(r *spanner.Row, i int, k string) (map[string]interface{}, error) {
-	var s []byte
-	singleRowImg := make(map[string]interface{})
-	err := r.Column(i, &s)
-	if err != nil {
-		if strings.Contains(err.Error(), "ambiguous column name") {
-			return nil, err
-		}
-		return nil, errors.New("ValidationException", err, k)
-	}
-	if len(s) > 0 {
-		var m interface{}
-		err := json.Unmarshal(s, &m)
-		if err != nil {
-			logger.LogError(err, string(s))
-			singleRowImg[k] = string(s)
-		}
-		val1, ok := m.(string)
-		if ok {
-			if base64Regexp.MatchString(val1) {
-				ba, err := base64.StdEncoding.DecodeString(val1)
-				if err == nil {
-					var sample interface{}
-					err = json.Unmarshal(ba, &sample)
-					if err == nil {
-						singleRowImg[k] = sample
-
-					} else {
-						singleRowImg[k] = string(s)
-
-					}
-				}
-			}
-		}
-
-		if mp, ok := m.(map[string]interface{}); ok {
-			for k, v := range mp {
-				if val, ok := v.(string); ok {
-					if base64Regexp.MatchString(val) {
-						ba, err := base64.StdEncoding.DecodeString(val)
-						if err == nil {
-							var sample interface{}
-							err = json.Unmarshal(ba, &sample)
-							if err == nil {
-								mp[k] = sample
-								m = mp
-							}
-						}
-					}
-				}
-			}
-		}
-		singleRowImg[k] = m
-
-	}
-	return singleRowImg, err
-}
-
-func parseNestedJSON(value interface{}) interface{} {
-	switch v := value.(type) {
-	case map[string]interface{}:
-		m := make(map[string]interface{})
-		for key, val := range v {
-			m[key] = parseNestedJSON(val)
-		}
-		return map[string]interface{}{"M": m}
-	case []string:
-		for i, item := range v {
-			v[i] = string(item)
-		}
-		return v
-	case []float64:
-		for i, item := range v {
-			v[i] = item
-		}
-		return v
-	case string:
-		// Additional handling for strings if necessary (e.g., base64 validation)
-		if base64Regexp.MatchString(v) {
-			ba, err := base64.StdEncoding.DecodeString(v)
-			if err != nil {
-			}
-			if err == nil {
-				return parseNestedJSON(ba)
-			}
-
-		}
-		return v
-	case []byte:
-		return v
-	case []interface{}:
-		for i, item := range v {
-			v[i] = parseNestedJSON(item)
-		}
-		return v
-	case float64:
-		return v
-	default:
-		return v
-	}
-}
-
-// updateFieldByPath navigates the nested JSON structure to update the desired field.
-func updateFieldByPath(data map[string]interface{}, path string, newValue interface{}) bool {
-	keys := strings.Split(path, ".")
-	keys = keys[1:]
-	// Traverse to the deepest map
-	current := data
-	for i, key := range keys {
-		if i == len(keys)-1 {
-			// If it's the last key, perform the update
-			current[key] = newValue
-			return true
-		}
-
-		// Traverse deeper into the map structure
-		if next, ok := current[key].(map[string]interface{}); ok {
-			current = next
-		} else {
-			// Path is invalid if we can't find the next map level
-			log.Printf("Invalid path: key %s not found\n", key)
-			return false
-		}
-	}
-	return false
 }
