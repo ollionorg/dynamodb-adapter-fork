@@ -32,7 +32,6 @@ func Test_parseRow(t *testing.T) {
 	skipCommitTimestampRow, _ := spanner.NewRow([]string{"strCol", "commit_timestamp"}, []interface{}{"my-text", "2021-01-01"})
 	multipleValuesRow, _ := spanner.NewRow([]string{"strCol", "intCol", "nullCol", "boolCol"}, []interface{}{"my-text", int64(32), spanner.NullString{}, true})
 
-
 	type args struct {
 		r      *spanner.Row
 		colDDL map[string]string
@@ -45,55 +44,55 @@ func Test_parseRow(t *testing.T) {
 	}{
 		{
 			"ParseStringValue",
-			args{simpleStringRow, map[string]string{"strCol": "STRING(MAX)"}}, 
+			args{simpleStringRow, map[string]string{"strCol": "STRING(MAX)"}},
 			map[string]interface{}{"strCol": "my-text"},
 			false,
 		},
 		{
 			"ParseIntValue",
-			args{simpleIntRow, map[string]string{"intCol": "INT64"}}, 
+			args{simpleIntRow, map[string]string{"intCol": "INT64"}},
 			map[string]interface{}{"intCol": int64(314)},
 			false,
 		},
 		{
 			"ParseFloatValue",
-			args{simpleFloatRow, map[string]string{"floatCol": "FLOAT64"}}, 
+			args{simpleFloatRow, map[string]string{"floatCol": "FLOAT64"}},
 			map[string]interface{}{"floatCol": 3.14},
 			false,
 		},
 		{
 			"ParseNumericIntValue",
-			args{simpleNumericIntRow, map[string]string{"numericCol": "NUMERIC"}}, 
+			args{simpleNumericIntRow, map[string]string{"numericCol": "NUMERIC"}},
 			map[string]interface{}{"numericCol": int64(314)},
 			false,
 		},
 		{
 			"ParseNumericFloatValue",
-			args{simpleNumericFloatRow, map[string]string{"numericCol": "NUMERIC"}}, 
+			args{simpleNumericFloatRow, map[string]string{"numericCol": "NUMERIC"}},
 			map[string]interface{}{"numericCol": 3.25},
 			false,
 		},
 		{
 			"ParseBoolValue",
-			args{simpleBoolRow, map[string]string{"boolCol": "BOOL"}}, 
+			args{simpleBoolRow, map[string]string{"boolCol": "BOOL"}},
 			map[string]interface{}{"boolCol": true},
 			false,
 		},
 		{
 			"RemoveNulls",
-			args{removeNullRow, map[string]string{"strCol": "STRING(MAX)", "nullCol": "STRING(MAX)"}}, 
+			args{removeNullRow, map[string]string{"strCol": "STRING(MAX)", "nullCol": "STRING(MAX)"}},
 			map[string]interface{}{"strCol": "my-text"},
 			false,
 		},
 		{
 			"SkipCommitTimestamp",
-			args{skipCommitTimestampRow, map[string]string{"strCol": "STRING(MAX)", "commit_timestamp": "TIMESTAMP"}}, 
+			args{skipCommitTimestampRow, map[string]string{"strCol": "STRING(MAX)", "commit_timestamp": "TIMESTAMP"}},
 			map[string]interface{}{"strCol": "my-text"},
 			false,
 		},
 		{
 			"MultiValueRow",
-			args{multipleValuesRow, map[string]string{"strCol": "STRING(MAX)", "intCol": "INT64", "nullCol": "STRING(MAX)", "boolCol": "BOOL"}}, 
+			args{multipleValuesRow, map[string]string{"strCol": "STRING(MAX)", "intCol": "INT64", "nullCol": "STRING(MAX)", "boolCol": "BOOL"}},
 			map[string]interface{}{"strCol": "my-text", "intCol": int64(32), "boolCol": true},
 			false,
 		},

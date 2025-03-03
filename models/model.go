@@ -72,7 +72,7 @@ type GetItemMeta struct {
 	Key                      map[string]*dynamodb.AttributeValue `json:"Key"`
 }
 
-//BatchGetMeta struct
+// BatchGetMeta struct
 type BatchGetMeta struct {
 	RequestItems map[string]BatchGetWithProjectionMeta `json:"RequestItems"`
 }
@@ -135,7 +135,7 @@ type UpdateAttr struct {
 	ExpressionAttributeValues map[string]*dynamodb.AttributeValue `json:"ExpressionAttributeValues"`
 }
 
-//ScanMeta for Scan request
+// ScanMeta for Scan request
 type ScanMeta struct {
 	TableName                 string                              `json:"TableName"`
 	IndexName                 string                              `json:"IndexName"`
@@ -165,28 +165,28 @@ type TableConfig struct {
 	ActualTable      string                 `json:"ActualTable,omitempty"`
 }
 
-//BatchWriteItem for Batch Operation
+// BatchWriteItem for Batch Operation
 type BatchWriteItem struct {
 	RequestItems map[string][]BatchWriteSubItems `json:"RequestItems"`
 }
 
-//BatchWriteItemResponse for Batch Operation
+// BatchWriteItemResponse for Batch Operation
 type BatchWriteItemResponse struct {
 	UnprocessedItems map[string][]BatchWriteSubItems `json:"UnprocessedItems"`
 }
 
-//BatchWriteSubItems is for BatchWriteItem
+// BatchWriteSubItems is for BatchWriteItem
 type BatchWriteSubItems struct {
 	DelReq BatchDeleteItem `json:"DeleteRequest"`
 	PutReq BatchPutItem    `json:"PutRequest"`
 }
 
-//BatchDeleteItem is for BatchWriteSubItems
+// BatchDeleteItem is for BatchWriteSubItems
 type BatchDeleteItem struct {
 	Key map[string]*dynamodb.AttributeValue `json:"Key"`
 }
 
-//BatchPutItem is for BatchWriteSubItems
+// BatchPutItem is for BatchWriteSubItems
 type BatchPutItem struct {
 	Item map[string]*dynamodb.AttributeValue `json:"Item"`
 }
@@ -275,4 +275,66 @@ type StreamDataModel struct {
 	SequenceNumber int64                  `json:"SequenceNumber"`
 	EventID        string                 `json:"EventId"`
 	EventSourceArn string                 `json:"EventSourceArn"`
+}
+
+// TransactWriteItemsRequest represents the input structure for TransactWriteItems API.
+type TransactWriteItemsRequest struct {
+	TransactItems               []TransactWriteItem `json:"TransactItems"`
+	ReturnConsumedCapacity      string              `json:"ReturnConsumedCapacity,omitempty"`
+	ReturnItemCollectionMetrics string              `json:"ReturnItemCollectionMetrics,omitempty"` // Added for consistency with DynamoDB
+}
+
+// TransactWriteItem represents a single Put, Update, or Delete operation inside TransactWriteItems.
+type TransactWriteItem struct {
+	Put    PutItemRequest    `json:"Put,omitempty"`
+	Update UpdateAttr        `json:"Update,omitempty"`
+	Delete DeleteItemRequest `json:"Delete,omitempty"`
+}
+
+// PutItemRequest represents the structure of a Put request.
+type PutItemRequest struct {
+	TableName                 string                              `json:"TableName"`
+	AttrMap                   map[string]interface{}              `json:"AttrMap"`
+	ReturnValues              string                              `json:"ReturnValuesOnConditionCheckFailure"`
+	ConditionExpression       string                              `json:"ConditionExpression"`
+	ExpressionAttributeMap    map[string]interface{}              `json:"ExpressionAttributeMap"`
+	ExpressionAttributeNames  map[string]string                   `json:"ExpressionAttributeNames"`
+	ExpressionAttributeValues map[string]*dynamodb.AttributeValue `json:"ExpressionAttributeValues"`
+	Item                      map[string]*dynamodb.AttributeValue `json:"Item"`
+}
+
+// UpdateItemRequest represents the structure of an Update request.
+type UpdateItemRequest struct {
+	TableName                 string                              `json:"TableName"`
+	Key                       map[string]*dynamodb.AttributeValue `json:"Key"`
+	KeyArray                  map[string]interface{}              `json:"KeyArray"`
+	UpdateExpression          string                              `json:"UpdateExpression"`
+	ExpressionAttributeNames  map[string]string                   `json:"ExpressionAttributeNames,omitempty"`
+	ExpressionAttributeValues map[string]*dynamodb.AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+}
+
+// DeleteItemRequest represents the structure of a Delete request.
+type DeleteItemRequest struct {
+	TableName                 string                              `json:"TableName"`
+	PrimaryKeyMap             map[string]interface{}              `json:"PrimaryKeyMap"`
+	ConditionExpression       string                              `json:"ConditionExpression"`
+	ExpressionAttributeMap    map[string]interface{}              `json:"ExpressionAttributeMap"`
+	Key                       map[string]*dynamodb.AttributeValue `json:"Key"`
+	ExpressionAttributeValues map[string]*dynamodb.AttributeValue `json:"ExpressionAttributeValues"`
+	ExpressionAttributeNames  map[string]string                   `json:"ExpressionAttributeNames"`
+}
+
+// ItemCollectionMetrics represents the item collection metrics.  (Add more fields as needed)
+type ItemCollectionMetrics struct {
+	ItemCollectionSizeEstimate int64 `json:"ItemCollectionSizeEstimate"`
+}
+type ConsumedCapacity struct {
+	TableName     string  `json:"TableName"`
+	CapacityUnits float64 `json:"CapacityUnits"`
+}
+
+// TransactWriteItemsResponse represents the overall response structure for TransactWriteItems.
+type TransactWriteItemsResponse struct {
+	ConsumedCapacity      ConsumedCapacity                 `json:"ConsumedCapacity,omitempty"`      // Added for consistency
+	ItemCollectionMetrics map[string]ItemCollectionMetrics `json:"ItemCollectionMetrics,omitempty"` // Added for consistency
 }

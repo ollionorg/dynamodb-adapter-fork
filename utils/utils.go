@@ -51,6 +51,7 @@ func GetStringInBetween(str string, start string, end string) (result string) {
 
 // CreateConditionExpression - create evelute condition from condition
 func CreateConditionExpression(condtionExpression string, expressionAttr map[string]interface{}) (*models.Eval, error) {
+	fmt.Println("condtionExpression", condtionExpression)
 	if condtionExpression == "" {
 		e := new(models.Eval)
 		return e, nil
@@ -64,6 +65,7 @@ func CreateConditionExpression(condtionExpression string, expressionAttr map[str
 	cols := []string{}
 	ts := []string{}
 	var err error
+	fmt.Println("tokens", tokens)
 	for i := 0; i < len(tokens); i++ {
 		if i%2 == 0 {
 			if strings.Contains(tokens[i], ":") {

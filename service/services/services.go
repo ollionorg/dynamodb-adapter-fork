@@ -18,9 +18,11 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"strconv"
 	"strings"
+	"sync"
 
 	"cloud.google.com/go/spanner"
 	"github.com/ahmetb/go-linq"
@@ -31,6 +33,46 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/storage"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
+
+type Storage interface {
+	SpannerTransactWriteItems(ctx context.Context, tableName string, pValues, sValues []interface{}, projectionCols []string, st Storage) ([]map[string]interface{}, error)
+}
+type Service interface {
+	MayIReadOrWrite(tableName string, isWrite bool, user string) bool
+	TransactPut(ctx context.Context, tableName string, item map[string]interface{}, keyMapArray []map[string]interface{}, st Storage) ([]map[string]interface{}, error)
+}
+
+type spannerService struct { // Define a concrete type for your service
+	spannerClient *spanner.Client // Example: Your Spanner client
+	st            Storage
+}
+
+var service Service // Service interface variable
+
+var once sync.Once
+
+func SetServiceInstance(s Service) {
+	service = s
+}
+
+func GetServiceInstance() Service {
+	// once.Do(func() {
+	// 	storageInstance := storage.GetStorageInstance()
+	// 	// Initialize your Spanner client and other dependencies here
+	// 	//spannerClient, err := storageInstance.GetSpannerClient()
+	// 	if err != nil {
+	// 		// Handle error appropriately, e.g., log and panic
+	// 		//logger.Fatalf("Failed to initialize Spanner client: %v", err)
+	// 	}
+	// 	//service = &spannerService{spannerClient: spannerClient, st: storage.GetStorageInstance()}
+	// })
+	return service
+}
+
+// MayIReadOrWrite for checking the operation is allowed or not
+func (s *spannerService) MayIReadOrWrite(table string, IsMutation bool, operation string) bool {
+	return true
+}
 
 // getSpannerProjections makes a projection array of columns
 func getSpannerProjections(projectionExpression, table string, expressionAttributeNames map[string]string) []string {
@@ -586,4 +628,164 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 		delete(updateResp, colsToRemove[i])
 	}
 	return updateResp, nil
+}
+
+func TransactWritePut(ctx context.Context, tableName string, putObj map[string]interface{}, expr *models.UpdateExpressionCondition, conditionExp string, expressionAttr, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	tableConf, err := config.GetTableConf(tableName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tableName = tableConf.ActualTable
+	e, err := utils.CreateConditionExpression(conditionExp, expressionAttr)
+	fmt.Println("e", e)
+	if err != nil {
+		return nil, nil, err
+	}
+	newResp, mut, err := storage.GetStorageInstance().SpannerTransactWritePut(ctx, tableName, putObj, e, expr, txn)
+	fmt.Println("newResp", newResp, "mut", mut, "err", err)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if oldRes == nil {
+		return oldRes, nil, nil
+	}
+	updateResp := map[string]interface{}{}
+	for k, v := range oldRes {
+		updateResp[k] = v
+	}
+	for k, v := range newResp {
+		updateResp[k] = v
+	}
+
+	return updateResp, mut, nil
+}
+
+func TransactDel(ctx context.Context, tableName string, attrMap map[string]interface{}, condExpression string, expressionAttr map[string]interface{}, expr *models.UpdateExpressionCondition) (map[string]interface{}, error) {
+	logger.LogDebug(expressionAttr)
+	tableConf, err := config.GetTableConf(tableName)
+	if err != nil {
+		return nil, err
+	}
+
+	tableName = tableConf.ActualTable
+
+	e, err := utils.CreateConditionExpression(condExpression, expressionAttr)
+	if err != nil {
+		return nil, err
+	}
+
+	err = storage.GetStorageInstance().SpannerDel(ctx, tableName, expressionAttr, e, expr)
+	if err != nil {
+		return nil, err
+	}
+	sKey := tableConf.SortKey
+	pKey := tableConf.PartitionKey
+	res, err := storage.GetStorageInstance().SpannerGet(ctx, tableName, attrMap[pKey], attrMap[sKey], nil)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func TransactWriteDel(ctx context.Context, tableName string, attrMap map[string]interface{}, condExpression string, expressionAttr map[string]interface{}, expr *models.UpdateExpressionCondition, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	logger.LogDebug(expressionAttr)
+	tableConf, err := config.GetTableConf(tableName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tableName = tableConf.ActualTable
+
+	e, err := utils.CreateConditionExpression(condExpression, expressionAttr)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	mut, err := storage.GetStorageInstance().TransactWriteSpannerDel(ctx, tableName, expressionAttr, e, expr, txn)
+	if err != nil {
+		return nil, nil, err
+	}
+	sKey := tableConf.SortKey
+	pKey := tableConf.PartitionKey
+	res, err := storage.GetStorageInstance().SpannerGet(ctx, tableName, attrMap[pKey], attrMap[sKey], nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res, mut, nil
+}
+
+func TransactWriteAdd(ctx context.Context, tableName string, attrMap map[string]interface{}, condExpression string, m, expressionAttr map[string]interface{}, expr *models.UpdateExpressionCondition, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	tableConf, err := config.GetTableConf(tableName)
+	if err != nil {
+		return nil, nil, err
+	}
+	tableName = tableConf.ActualTable
+
+	e, err := utils.CreateConditionExpression(condExpression, expressionAttr)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	newResp, mut, err := storage.GetStorageInstance().TransactWriteSpannerAdd(ctx, tableName, m, e, expr, txn)
+	if err != nil {
+		return nil, nil, err
+	}
+	if oldRes == nil {
+		return newResp, nil, nil
+	}
+	updateResp := map[string]interface{}{}
+	for k, v := range oldRes {
+		updateResp[k] = v
+	}
+	for k, v := range newResp {
+		updateResp[k] = v
+	}
+
+	return updateResp, mut, nil
+}
+
+func TransactWriteRemove(ctx context.Context, tableName string, updateAttr models.UpdateAttr, actionValue string, expr *models.UpdateExpressionCondition, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	actionValue = strings.ReplaceAll(actionValue, " ", "")
+	colsToRemove := strings.Split(actionValue, ",")
+	tableConf, err := config.GetTableConf(tableName)
+	if err != nil {
+		return nil, nil, err
+	}
+	tableName = tableConf.ActualTable
+	e, err := utils.CreateConditionExpression(updateAttr.ConditionExpression, updateAttr.ExpressionAttributeMap)
+	if err != nil {
+		return nil, nil, err
+	}
+	mut, err := storage.GetStorageInstance().TransactWriteSpannerRemove(ctx, tableName, updateAttr.PrimaryKeyMap, e, expr, colsToRemove, txn)
+	if err != nil {
+		return nil, nil, err
+	}
+	if oldRes == nil {
+		return oldRes, nil, nil
+	}
+	updateResp := map[string]interface{}{}
+	for k, v := range oldRes {
+		updateResp[k] = v
+	}
+
+	for i := 0; i < len(colsToRemove); i++ {
+		delete(updateResp, colsToRemove[i])
+	}
+	return updateResp, mut, nil
+}
+
+func TransactWriteDelete(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, condExpression string, attrMap map[string]interface{}, expr *models.UpdateExpressionCondition, txn *spanner.ReadWriteTransaction) (*spanner.Mutation, error) {
+	tableConf, err := config.GetTableConf(tableName)
+	if err != nil {
+		return nil, err
+	}
+	tableName = tableConf.ActualTable
+	e, err := utils.CreateConditionExpression(condExpression, attrMap)
+	if err != nil {
+		return nil, err
+	}
+	mut, err := storage.GetStorageInstance().TransactWriteSpannerDelete(ctx, tableName, primaryKeyMap, e, expr, txn)
+	return mut, nil
 }
