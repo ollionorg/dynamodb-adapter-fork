@@ -33,10 +33,16 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/service/services"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
 var operations = map[string]string{"SET": "(?i) SET ", "DELETE": "(?i) DELETE ", "ADD": "(?i) ADD ", "REMOVE": "(?i) REMOVE "}
 var byteSliceType = reflect.TypeOf([]byte(nil))
+var (
+	listRegex             = regexp.MustCompile(`list_append\(([^,]+),\s*([^\)]+)\)`)
+	listIndexRegex        = regexp.MustCompile(`(\w+)\[(\d+)\]`)
+	listUpdateAppendRegex = regexp.MustCompile(`(?i)list_append\(([^)]+),\s*(:\w+)\)`)
+)
 
 func between(value string, a string, b string) string {
 	// Get substring between two strings.
@@ -87,96 +93,287 @@ func deleteEmpty(s []string) []string {
 	return r
 }
 
-func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignment bool) (map[string]interface{}, *models.UpdateExpressionCondition) {
+// parseActionValue parses the action value string from an update expression,
+// processes it, and returns a map of attribute names to their new values,
+// along with an UpdateExpressionCondition if one was parsed.
+//
+// Args:
+//
+//	actionValue: The string representing the action to be performed (e.g., "count + 1, name = :newName").
+//	updateAtrr: The UpdateAttr struct containing expression attribute names and values.
+//	assignment: A boolean indicating whether the action is an assignment (true) or a set operation (false).
+//	oldRes: The existing item's values (map[string]interface{}), fetched from Spanner.
+//
+// Returns:
+//
+//	A map of attribute names to their new values (map[string]interface{}), and
+//	an UpdateExpressionCondition pointer, which might be nil if no condition was parsed.
+func parseActionValue(actionValue string, updateAtrr models.UpdateAttr, assignment bool, oldRes map[string]interface{}) (map[string]interface{}, *models.UpdateExpressionCondition) {
 	expr := parseUpdateExpresstion(actionValue)
 	if expr != nil {
 		actionValue = expr.ActionVal
 		expr.AddValues = make(map[string]float64)
 	}
+
 	resp := make(map[string]interface{})
-	pairs := strings.Split(actionValue, ",")
+	var pairs []string
+	if strings.Contains(actionValue, "list_append") {
+		pairs = []string{actionValue}
+	} else {
+		pairs = strings.Split(actionValue, ",")
+	}
 	var v []string
 	for _, p := range pairs {
 		var addValue float64
 		status := false
+
+		// Handle addition (e.g., "count + 1")
 		if strings.Contains(p, "+") {
 			tokens := strings.Split(p, "+")
 			tokens[1] = strings.TrimSpace(tokens[1])
 			p = tokens[0]
-			v1, ok := updateAtrr.ExpressionAttributeMap[(tokens[1])]
+			v1, ok := updateAtrr.ExpressionAttributeMap[tokens[1]]
 			if ok {
-				v2, ok := v1.(float64)
-				if ok {
+				switch v2 := v1.(type) {
+				case float64:
 					addValue = v2
 					status = true
-				} else {
-					v2, ok := v1.(int64)
-					if ok {
-						addValue = float64(v2)
-						status = true
-					}
+				case int64:
+					addValue = float64(v2)
+					status = true
 				}
 			}
 		}
+
+		// Handle subtraction (e.g., "count - 2")
 		if strings.Contains(p, "-") {
 			tokens := strings.Split(p, "-")
 			tokens[1] = strings.TrimSpace(tokens[1])
-			v1, ok := updateAtrr.ExpressionAttributeMap[(tokens[1])]
+			v1, ok := updateAtrr.ExpressionAttributeMap[tokens[1]]
 			if ok {
-				v2, ok := v1.(float64)
-				if ok {
+				switch v2 := v1.(type) {
+				case float64:
 					addValue = -v2
 					status = true
-
-				} else {
-					v2, ok := v1.(int64)
-					if ok {
-						addValue = float64(-v2)
-						status = true
-					}
+				case int64:
+					addValue = float64(-v2)
+					status = true
 				}
 			}
 		}
+
+		if strings.Contains(p, "list_append") {
+			matches := listRegex.FindStringSubmatch(p)
+			if len(matches) == 3 {
+				fieldName := matches[1]
+				newValueKey := matches[2]
+				// Fetch the old value from OldData
+				oldValue, _ := oldRes[fieldName].([]interface{})
+
+				// Fetch the new value from ExpressionAttributeMap
+				newValue, ok := updateAtrr.ExpressionAttributeMap[newValueKey]
+				if ok {
+					if newValueList, ok := newValue.([]interface{}); ok {
+						// Append new values to the old list
+						mergedList := append(oldValue, newValueList...)
+						resp[fieldName] = mergedList
+					} else {
+						// Handle case where newValue is a single element
+						mergedList := append(oldValue, newValue)
+						resp[fieldName] = mergedList
+					}
+
+				} else {
+					// If newValue is not found in ExpressionAttributeMap, use placeholder
+					resp[fieldName] = oldValue
+				}
+				continue
+			}
+		}
+
+		// Handle SET with list index, e.g., guid[1] = :new_value
+		if strings.Contains(p, "=") {
+			parts := strings.Split(p, "=")
+			if len(parts) != 2 {
+				continue
+			}
+
+			field, valueKey := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+			value, ok := updateAtrr.ExpressionAttributeMap[valueKey]
+			if !ok {
+				continue
+			}
+			// Handle SET with list index, e.g., guid[1] = :new_value
+			matches := listIndexRegex.FindStringSubmatch(field)
+			if len(matches) == 3 {
+				listField := matches[1]
+				index, err := strconv.Atoi(matches[2])
+				if err != nil {
+					continue
+				}
+
+				// Retrieve the old list and modify the specified index
+				oldList, ok := oldRes[listField].([]interface{})
+				if !ok {
+					continue
+				}
+				// Validate index bounds
+				if index < 0 || index > len(oldList) {
+					continue
+				}
+
+				updatedList := make([]interface{}, len(oldList))
+				copy(updatedList, oldList)
+				if index == len(oldList) {
+					updatedList = append(updatedList, value) // Append new value
+				} else if index < len(oldList) {
+					updatedList[index] = value // Modify existing value
+				}
+				resp[listField] = updatedList
+				continue
+			}
+
+			// Handle simple SET assignments
+			resp[field] = value
+		}
+
+		// For assignment operations (SET)
 		if assignment {
 			v = strings.Split(p, " ")
 			v = deleteEmpty(v)
 		} else {
 			v = strings.Split(p, "=")
 		}
+
+		if len(v) < 2 {
+			continue
+		}
+
 		v[0] = strings.Replace(v[0], " ", "", -1)
 		v[1] = strings.Replace(v[1], " ", "", -1)
 
+		// Handle numeric additions
 		if status {
 			expr.AddValues[v[0]] = addValue
 		}
+
+		key := v[0]
 		if updateAtrr.ExpressionAttributeNames[v[0]] != "" {
-			tmp, ok := updateAtrr.ExpressionAttributeMap[v[1]]
-			if ok {
-				resp[updateAtrr.ExpressionAttributeNames[v[0]]] = tmp
-			}
-		} else {
-			if strings.Contains(v[1], "%") {
-				for j := 0; j < len(expr.Field); j++ {
-					if strings.Contains(v[1], "%"+expr.Value[j]+"%") {
-						tmp, ok := updateAtrr.ExpressionAttributeMap[expr.Value[j]]
-						if ok {
-							resp[v[0]] = tmp
-						}
+			key = updateAtrr.ExpressionAttributeNames[v[0]]
+		}
+		if strings.Contains(v[1], "%") {
+			for j := 0; j < len(expr.Field); j++ {
+				if strings.Contains(v[1], "%"+expr.Value[j]+"%") {
+					tmp, ok := updateAtrr.ExpressionAttributeMap[expr.Value[j]]
+					if ok {
+						resp[key] = tmp
 					}
 				}
-			} else {
-				tmp, ok := updateAtrr.ExpressionAttributeMap[v[1]]
-				if ok {
-					resp[v[0]] = tmp
+			}
+		} else {
+			tmp, ok := updateAtrr.ExpressionAttributeMap[v[1]]
+			if ok {
+				switch newValue := tmp.(type) {
+				case []string: // String Set
+					resp[key] = handleStringSet(oldRes, key, newValue, updateAtrr.UpdateExpression)
+				case []float64: // Number Set
+					resp[key] = handleNumberSet(oldRes, key, newValue, updateAtrr.UpdateExpression)
+				case [][]byte: // Binary Set
+					resp[key] = handleByteSet(oldRes, key, newValue, updateAtrr.UpdateExpression)
+				default: // Other types
+					resp[key] = tmp
 				}
 			}
 		}
+
 	}
+
 	// Merge primaryKeyMap and updateAttributes
 	for k, v := range updateAtrr.PrimaryKeyMap {
 		resp[k] = v
 	}
 	return resp, expr
+}
+
+// handleStringSet handles set operations (ADD/DELETE) for string sets.
+func handleStringSet(oldRes map[string]interface{}, key string, newValue []string, updateExpression string) []string {
+	if strSlice, ok := oldRes[key].([]string); ok {
+		if strings.Contains(updateExpression, "ADD") {
+			return utils.RemoveDuplicatesString(append(strSlice, newValue...))
+		} else if strings.Contains(updateExpression, "DELETE") {
+			return removeFromSlice(strSlice, newValue)
+		} else {
+			return utils.RemoveDuplicatesString(newValue)
+		}
+	} else {
+		return utils.RemoveDuplicatesString(newValue)
+	}
+}
+
+// handleNumberSet handles set operations for number sets (float64).
+func handleNumberSet(oldRes map[string]interface{}, key string, newValue []float64, updateExpression string) []float64 {
+	if floatSlice, ok := oldRes[key].([]float64); ok {
+		if strings.Contains(updateExpression, "ADD") {
+			return utils.RemoveDuplicatesFloat(append(floatSlice, newValue...))
+		} else if strings.Contains(updateExpression, "DELETE") {
+			return removeFromSlice(floatSlice, newValue)
+		} else {
+			return utils.RemoveDuplicatesFloat(newValue)
+		}
+	} else { // No existing value
+		return utils.RemoveDuplicatesFloat(newValue)
+	}
+}
+
+// handleByteSet handles set operations for byte sets (byte).
+func handleByteSet(oldRes map[string]interface{}, key string, newValue [][]byte, updateExpression string) [][]byte {
+	if byteSlice, ok := oldRes[key].([][]byte); ok {
+		if strings.Contains(updateExpression, "ADD") {
+			return utils.RemoveDuplicatesByteSlice(append(byteSlice, newValue...))
+		} else if strings.Contains(updateExpression, "DELETE") {
+			return removeFromByteSlice(byteSlice, newValue)
+		} else {
+			return utils.RemoveDuplicatesByteSlice(newValue)
+		}
+	} else { // No existing value
+		return utils.RemoveDuplicatesByteSlice(newValue)
+	}
+}
+
+// removeFromSlice removes elements from a generic slice.
+func removeFromSlice[T comparable](slice []T, toRemove []T) []T {
+	result := []T{}
+	removeMap := make(map[T]struct{}, len(toRemove))
+
+	for _, val := range toRemove {
+		removeMap[val] = struct{}{}
+	}
+
+	for _, val := range slice {
+		if _, found := removeMap[val]; !found {
+			result = append(result, val)
+		}
+	}
+	return result
+}
+
+// removeFromByteSlice removes elements from a byte slice.
+func removeFromByteSlice(slice [][]byte, toRemove [][]byte) [][]byte {
+	result := [][]byte{}
+
+	for _, item := range slice {
+		found := false
+		for _, rem := range toRemove {
+			if bytes.Equal(item, rem) { // Use bytes.Equal to compare byte slices
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func parseUpdateExpresstion(actionValue string) *models.UpdateExpressionCondition {
@@ -229,17 +426,23 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 	switch {
 	case action == "DELETE":
 		// perform delete
-		m, expr := parseActionValue(actionValue, updateAtrr, true)
+		m, expr := parseActionValue(actionValue, updateAtrr, true, oldRes)
 		res, err := services.Del(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, expr)
 		return res, m, err
 	case action == "SET":
+		if strings.Contains(actionValue, "list_append") {
+			// parse list_append operation here
+			m, expr := parseActionValue(actionValue, updateAtrr, false, oldRes)
+			res, err := services.Put(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes)
+			return res, m, err
+		}
 		// Update data in table
-		m, expr := parseActionValue(actionValue, updateAtrr, false)
+		m, expr := parseActionValue(actionValue, updateAtrr, false, oldRes)
 		res, err := services.Put(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes)
 		return res, m, err
 	case action == "ADD":
 		// Add data in table
-		m, expr := parseActionValue(actionValue, updateAtrr, true)
+		m, expr := parseActionValue(actionValue, updateAtrr, true, oldRes)
 		res, err := services.Add(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, updateAtrr.ExpressionAttributeMap, expr, oldRes)
 		return res, m, err
 
@@ -266,6 +469,7 @@ func UpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr) (interf
 		updateAtrr.ConditionExpression = strings.ReplaceAll(updateAtrr.ConditionExpression, k, v)
 	}
 	m := extractOperations(updateAtrr.UpdateExpression)
+
 	for k, v := range m {
 		res, acVal, err := performOperation(ctx, k, v, updateAtrr, oldRes)
 		resp = res
@@ -333,11 +537,20 @@ func extractOperations(updateExpression string) map[string]string {
 		updateExpression = re.ReplaceAllString(updateExpression, "%")
 	}
 
+	// Handle list_append explicitly
+	listAppendIndexes := listUpdateAppendRegex.FindAllStringIndex(updateExpression, -1)
+	for _, index := range listAppendIndexes {
+		opsSeq[index[0]] = "SET" // assuming list_append falls under a SET operation
+		opsIndex = append(opsIndex, index[0])
+	}
+
 	sort.Ints(opsIndex)
 	tokens := strings.Split(updateExpression, "%")[1:]
 	ops := map[string]string{}
-	for i, opsIndex := range opsIndex {
-		ops[strings.TrimSpace(opsSeq[opsIndex])] = tokens[i]
+	for i, index := range opsIndex {
+		if index < len(opsSeq) {
+			ops[strings.TrimSpace(opsSeq[index])] = tokens[i]
+		}
 	}
 	return ops
 }
@@ -520,18 +733,46 @@ func convertFrom(a *dynamodb.AttributeValue, tableName string) interface{} {
 		return a.B
 	}
 	if a.SS != nil {
-		l := make([]interface{}, len(a.SS))
-		for index, v := range a.SS {
-			l[index] = *v
+		uniqueStrings := make(map[string]struct{})
+		for _, v := range a.SS {
+			uniqueStrings[*v] = struct{}{}
 		}
+
+		// Convert map keys to a slice
+		l := make([]string, 0, len(uniqueStrings))
+		for str := range uniqueStrings {
+			l = append(l, str)
+		}
+
 		return l
 	}
 	if a.NS != nil {
-		l := make([]interface{}, len(a.NS))
-		for index, v := range a.NS {
-			l[index], _ = strconv.ParseFloat(*v, 64)
+		l := []float64{}
+		numberMap := make(map[string]struct{})
+		for _, v := range a.NS {
+			if _, exists := numberMap[*v]; !exists {
+				numberMap[*v] = struct{}{}
+				n, err := strconv.ParseFloat(*v, 64)
+				if err != nil {
+					panic(fmt.Sprintf("Invalid number in NS: %s", *v))
+				}
+				l = append(l, n)
+			}
 		}
 		return l
+	}
+	if a.BS != nil {
+		// Handle Binary Set
+		binarySet := [][]byte{}
+		binaryMap := make(map[string]struct{})
+		for _, v := range a.BS {
+			key := string(v)
+			if _, exists := binaryMap[key]; !exists {
+				binaryMap[key] = struct{}{}
+				binarySet = append(binarySet, v)
+			}
+		}
+		return binarySet
 	}
 	panic(fmt.Sprintf("%#v is not a supported dynamodb.AttributeValue", a))
 }
@@ -644,7 +885,11 @@ func ChangeMaptoDynamoMap(in interface{}) (map[string]interface{}, error) {
 
 func convertMapToDynamoObject(output map[string]interface{}, v reflect.Value) error {
 	v = valueElem(v)
-	fmt.Println("convertMapToDynamoObject", v, v.Kind())
+
+	if !v.IsValid() {
+		output["NULL"] = true // Handle NULL directly here
+		return nil
+	}
 	switch v.Kind() {
 	case reflect.Map:
 		return convertMap(output, v)
@@ -679,9 +924,10 @@ func convertMap(output map[string]interface{}, v reflect.Value) error {
 
 		elemVal := v.MapIndex(key)
 		elem := make(map[string]interface{})
-		_ = convertMapToDynamoObject(elem, elemVal)
 
+		_ = convertMapToDynamoObject(elem, elemVal)
 		output[keyName] = elem
+
 	}
 	return nil
 }
@@ -701,10 +947,37 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 			return nil
 		}
 		output["B"] = append([]byte{}, b...)
+	case reflect.String:
+		listVal := []string{}
+		for i := 0; i < v.Len(); i++ {
+			listVal = append(listVal, v.Index(i).String())
+		}
+		output["SS"] = listVal
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Float32, reflect.Float64:
+		listVal := []string{}
+		for i := 0; i < v.Len(); i++ {
+			listVal = append(listVal, fmt.Sprintf("%v", v.Index(i).Interface()))
+		}
+		output["NS"] = listVal
+
+	case reflect.Slice:
+		if v.Type().Elem().Kind() == reflect.Slice {
+			binarySet := [][]byte{}
+			for i := 0; i < v.Len(); i++ {
+				elem := v.Index(i)
+				if elem.Kind() == reflect.Slice && elem.IsValid() && !elem.IsNil() {
+					binarySet = append(binarySet, elem.Bytes())
+				}
+			}
+			output["BS"] = binarySet
+		} else {
+			return fmt.Errorf("type of slice not supported: %s", v.Type().Elem().Kind().String())
+		}
+
 	default:
 		listVal := make([]map[string]interface{}, 0, v.Len())
 
-		count := 0
 		for i := 0; i < v.Len(); i++ {
 			elem := make(map[string]interface{})
 			err := convertMapToDynamoObject(elem, v.Index(i))
@@ -712,7 +985,6 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 				return err
 			}
 			listVal = append(listVal, elem)
-			count++
 		}
 		output["L"] = listVal
 	}
@@ -721,7 +993,6 @@ func convertSlice(output map[string]interface{}, v reflect.Value) error {
 }
 
 func convertSingle(output map[string]interface{}, v reflect.Value) error {
-	fmt.Println("convertSingle", v.Kind(), output)
 	switch v.Kind() {
 	case reflect.Bool:
 		output["BOOL"] = new(bool)
@@ -756,13 +1027,19 @@ func convertNumber(output map[string]interface{}, v reflect.Value) error {
 	return nil
 }
 
-func TransactWriteUpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr, txn *spanner.ReadWriteTransaction) (interface{}, *spanner.Mutation, error) {
+// TransactWriteUpdateExpression is used to update an item in the database
+// with a transaction. If the condition expression fails, the transaction is
+// rolled back.
+func TransactWriteUpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	// replace the placeholder column names with the original column names
 	updateAtrr.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(updateAtrr.TableName, updateAtrr.ExpressionAttributeNames)
+	// get the old item if it exists
 	var oldRes map[string]interface{}
 	var mut *spanner.Mutation
 	if updateAtrr.ReturnValues != "NONE" {
 		oldRes, _ = services.GetWithProjection(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, "", nil)
 	}
+	// loop through each operation and perform it
 	var resp map[string]interface{}
 	var actVal = make(map[string]interface{})
 	var er error
@@ -780,26 +1057,28 @@ func TransactWriteUpdateExpression(ctx context.Context, updateAtrr models.Update
 			actVal[k] = v
 		}
 	}
+	// log the result of the transaction
 	logger.LogDebug(updateAtrr.ReturnValues, resp, oldRes, mut)
-
-	var output map[string]interface{}
-	var errOutput error
+	// return the result of the transaction
 	switch updateAtrr.ReturnValues {
 	case "NONE":
 		return nil, nil, er
 	case "ALL_NEW":
-		output, errOutput = ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, resp))
+		output, errOutput := ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, resp))
+		return map[string]interface{}{"Attributes": output}, mut, errOutput
 	case "ALL_OLD":
 		if len(oldRes) == 0 {
 			return nil, nil, er
 		}
-		output, errOutput = ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, oldRes))
+		output, errOutput := ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, oldRes))
+		return map[string]interface{}{"Attributes": output}, mut, errOutput
 	case "UPDATED_NEW":
 		var resVal = make(map[string]interface{})
 		for k := range actVal {
 			resVal[k] = resp[k]
 		}
-		output, errOutput = ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, resVal))
+		output, errOutput := ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, resVal))
+		return map[string]interface{}{"Attributes": output}, mut, errOutput
 	case "UPDATED_OLD":
 		if len(oldRes) == 0 {
 			return nil, nil, er
@@ -808,29 +1087,47 @@ func TransactWriteUpdateExpression(ctx context.Context, updateAtrr models.Update
 		for k := range actVal {
 			resVal[k] = oldRes[k]
 		}
-		output, errOutput = ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, resVal))
-
+		output, errOutput := ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, resVal))
+		return map[string]interface{}{"Attributes": output}, mut, errOutput
 	default:
-		output, errOutput = ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, resp))
+		output, errOutput := ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(updateAtrr.TableName, resp))
+		return map[string]interface{}{"Attributes": output}, mut, errOutput
 	}
-	return map[string]interface{}{"Attributes": output}, mut, errOutput
 }
 
+// TransactWritePerformOperation performs a transactional write operation based on the given action and actionValue.
+// The operation is performed based on the given action and actionValue. The UpdateAttr struct contains information about
+// the operation, such as the table name, primary key map, condition expression, and expression attribute map. The oldRes map
+// contains the old values of the item, and the txn is the Spanner transaction object.
+//
+// Args:
+//
+//	ctx: The context.Context object.
+//	action: The action to be performed (e.g., DELETE, SET, ADD, REMOVE).
+//	actionValue: The value of the action (e.g., "count + 1", "name = :newName").
+//	updateAtrr: The UpdateAttr struct containing information about the operation.
+//	oldRes: The old values of the item (map[string]interface{}).
+//	txn: The Spanner transaction object.
+//
+// Returns:
+//
+//	A map of attribute names to their new values (map[string]interface{}), the action value (map[string]interface{}),
+//	a Spanner mutation object, and an error.
 func TransactWritePerformOperation(ctx context.Context, action string, actionValue string, updateAtrr models.UpdateAttr, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, map[string]interface{}, *spanner.Mutation, error) {
 	switch {
 	case action == "DELETE":
 		// perform delete
-		m, expr := parseActionValue(actionValue, updateAtrr, true)
+		m, expr := parseActionValue(actionValue, updateAtrr, true, oldRes)
 		res, mut, err := services.TransactWriteDel(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, expr, txn)
 		return res, m, mut, err
 	case action == "SET":
 		// Update data in table
-		m, expr := parseActionValue(actionValue, updateAtrr, false)
+		m, expr := parseActionValue(actionValue, updateAtrr, false, oldRes)
 		res, mut, err := services.TransactWritePut(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes, txn)
 		return res, m, mut, err
 	case action == "ADD":
 		// Add data in table
-		m, expr := parseActionValue(actionValue, updateAtrr, true)
+		m, expr := parseActionValue(actionValue, updateAtrr, true, oldRes)
 		res, mut, err := services.TransactWriteAdd(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, updateAtrr.ExpressionAttributeMap, expr, oldRes, txn)
 		return res, m, mut, err
 

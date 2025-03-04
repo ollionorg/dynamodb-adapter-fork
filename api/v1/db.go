@@ -17,6 +17,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -29,19 +30,31 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/logger"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/service/services"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/storage"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
 )
 
+type APIHandler struct {
+	svc services.Service
+}
+
+func NewAPIHandler(svc services.Service) *APIHandler {
+	return &APIHandler{svc: svc}
+}
+
 // InitDBAPI - routes for apis
 func InitDBAPI(r *gin.Engine) {
-	r.POST("/v1", RouteRequest)
+	svc := services.GetServiceInstance()
+
+	// Create API handler with dependency injection
+	apiHandler := NewAPIHandler(svc)
+	r.POST("/v1", apiHandler.RouteRequest)
 }
 
 // RouteRequest - parse X-Amz-Target and call appropiate handler
-func RouteRequest(c *gin.Context) {
+func (h *APIHandler) RouteRequest(c *gin.Context) {
 	var amzTarget = c.Request.Header.Get("X-Amz-Target")
-	svc := services.GetServiceInstance()
 	switch strings.Split(amzTarget, ".")[1] {
 	case "BatchGetItem":
 		BatchGetItem(c)
@@ -60,9 +73,9 @@ func RouteRequest(c *gin.Context) {
 	case "UpdateItem":
 		Update(c)
 	case "TransactWriteItems":
-		TransactWriteItems(c, svc)
+		h.TransactWriteItems(c)
 	default:
-		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of"+amzTarget).
+		c.JSON(errors.New("ValidationException", "Invalid X-Amz-Target header value of "+amzTarget).
 			HTTPResponse("X-Amz-Target Header not supported"))
 	}
 }
@@ -189,7 +202,7 @@ func queryResponse(query models.Query, c *gin.Context) {
 	}
 
 	if query.Limit == 0 {
-		query.Limit = config.ConfigurationMap.QueryLimit
+		query.Limit = models.GlobalConfig.Spanner.QueryLimit
 	}
 	query.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(query.TableName, query.ExpressionAttributeNames)
 	query = ReplaceHashRangeExpr(query)
@@ -294,12 +307,9 @@ func GetItemMeta(c *gin.Context) {
 		}
 		getItemMeta.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(getItemMeta.TableName, getItemMeta.ExpressionAttributeNames)
 		res, rowErr := services.GetWithProjection(c.Request.Context(), getItemMeta.TableName, getItemMeta.PrimaryKeyMap, getItemMeta.ProjectionExpression, getItemMeta.ExpressionAttributeNames)
-		fmt.Println("res", res)
 		if rowErr == nil {
 			changedColumns := ChangeResponseToOriginalColumns(getItemMeta.TableName, res)
-			fmt.Println("changedColumns", changedColumns)
 			output, err := ChangeMaptoDynamoMap(changedColumns)
-			fmt.Println("output", output)
 			if err != nil {
 				c.JSON(errors.HTTPResponse(err, "OutputChangedError"))
 			}
@@ -512,7 +522,8 @@ func Scan(c *gin.Context) {
 					c.JSON(errors.HTTPResponse(err, "LastEvaluatedKeyChangeError"))
 				}
 			}
-			c.JSON(http.StatusOK, res)
+			jsonData, _ := json.Marshal(res)
+			c.JSON(http.StatusOK, json.RawMessage(jsonData))
 		} else {
 			c.JSON(errors.HTTPResponse(err, meta))
 		}
@@ -670,12 +681,20 @@ func batchUpdateItems(con context.Context, batchMetaUpdate models.BatchMetaUpdat
 	return nil
 }
 
-func TransactWriteItems(c *gin.Context, svc services.Service) {
-	fmt.Println("inside transactWriteItems")
+// TransactWriteItems performs a transactional write operation on a table
+// @Description Transact Write Items for performing transactional write operations on a table
+// @Summary Transact Write Items from table
+// @ID transact-write-items
+// @Produce  json
+// @Success 200 {object} gin.H
+// @Param requestBody body models.TransactWriteItemsRequest true "Please add request body of type models.TransactWriteItemsRequest"
+// @Failure 500 {object} gin.H "{"errorMessage":"We had a problem with our server. Try again later.","errorCode":"E0001"}"
+// @Router /transact-write-items/ [post]
+// @Failure 401 {object} gin.H "{"errorMessage":"API access not allowed","errorCode": "E0005"}"
+
+func (h *APIHandler) TransactWriteItems(c *gin.Context) {
 	defer PanicHandler(c)
 	defer c.Request.Body.Close()
-
-	//... (Tracing code - similar to TransactGetItems)
 
 	var transactWriteMeta models.TransactWriteItemsRequest
 	if err := c.ShouldBindJSON(&transactWriteMeta); err != nil {
@@ -683,183 +702,180 @@ func TransactWriteItems(c *gin.Context, svc services.Service) {
 		return
 	}
 	storageInstance := storage.GetStorageInstance()
-	fmt.Println("storageInstance", storageInstance)
-	// Initialize your Spanner client and other dependencies here
 	spannerClient, _ := storageInstance.GetSpannerClient()
-	fmt.Println("spannerClient", spannerClient)
+
 	ctx := context.Background()
-	//itemCollectionMetrics := make(map[string]models.ItemCollectionMetrics)
-	//consumedCapacity := make(models.ConsumedCapacity, 0)
+	var resp models.TransactWriteItemsOutput
+	var resultItems []map[string]interface{}
 
 	_, _ = spannerClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		var mutations []*spanner.Mutation
 
 		for _, transactItem := range transactWriteMeta.TransactItems {
-			fmt.Println("transactItem", transactItem)
 			var mut *spanner.Mutation
+			var result map[string]interface{}
 			var err error
 
-			if transactItem.Put.Item != nil {
-				fmt.Println("transactItem.Put", transactItem.Put)
-				mut, err = handlePutOperation(c, transactItem.Put, txn)
-				fmt.Println("mut", mut)
-			}
-			if transactItem.Update.Key != nil {
-				fmt.Println("transactItem.Put", transactItem.Update)
-				mut, err = handleUpdateOperation(c, transactItem.Update, txn)
-				fmt.Println("mut", mut)
-			}
-			if transactItem.Delete.Key != nil {
-				fmt.Println("transactItem.Put", transactItem.Update)
-				mut, err = handleDeleteOperation(c, transactItem.Delete, txn)
-				fmt.Println("mut", mut)
+			switch {
+			case transactItem.ConditionCheck.Key != nil:
+				mut, err = handleConditionCheck(c, transactItem.ConditionCheck, txn)
+				if err != nil {
+					c.JSON(errors.New("ConditionCheckFailed", err).HTTPResponse(transactItem.ConditionCheck))
+					return err
+				}
+			case transactItem.Put.Item != nil:
+				mut, result, err = handleWriteOperation(c, transactItem.Put, txn, "Put")
+				resultItems = append(resultItems, map[string]interface{}{"Put": result})
+			case transactItem.Update.Key != nil:
+				mut, result, err = handleWriteOperation(c, transactItem.Update, txn, "Update")
+				resultItems = append(resultItems, map[string]interface{}{"Update": result})
+			case transactItem.Delete.Key != nil:
+				mut, result, err = handleWriteOperation(c, transactItem.Delete, txn, "Delete")
+				resultItems = append(resultItems, map[string]interface{}{"Delete": result})
+
 			}
 
 			if err != nil {
-				return err // Abort transaction on error
+				return err
 			}
-
-			mutations = append(mutations, mut)
-			fmt.Println("mut", mutations)
+			if mut != nil {
+				mutations = append(mutations, mut)
+			}
 		}
-
-		// Apply all mutations within the transaction
-		return txn.BufferWrite(mutations)
+		err := txn.BufferWrite(mutations)
+		if e := errors.AssignError(err); e != nil {
+			return e
+		}
+		resp.Item = resultItems
+		c.JSON(http.StatusOK, resultItems)
+		return nil
 	})
-
 }
 
-// handlePutOperation processes a Put request and converts it to a Spanner mutation.
-func handlePutOperation(c *gin.Context, details models.PutItemRequest, txn *spanner.ReadWriteTransaction) (*spanner.Mutation, error) {
-	fmt.Println("inside handlePutOperation", details)
-
-	tableName := details.TableName
-	if tableName == "" {
-		return nil, fmt.Errorf("missing TableName in Put operation")
-	}
+// handleConditionCheck takes a ConditionCheckRequest and a ReadWriteTransaction and returns a Mutation and an error.
+// It first converts the DynamoDB Key and ExpressionAttributeValues to Spanner's map type.
+// Then it replaces the ExpressionAttributeNames with the actual values in the ConditionExpression.
+// After that, it evaluates the condition expression using the EvaluateConditionalExpression function.
+// If the evaluation is false, it returns an error of ConditionalCheckFailedException.
+// If the evaluation is true, it returns nil.
+func handleConditionCheck(c *gin.Context, details models.ConditionCheckRequest, txn *spanner.ReadWriteTransaction) (*spanner.Mutation, error) {
 	var err error
-	// Convert DynamoDB format to Go map
-	//item := make(map[string]interface{})
-	details.AttrMap, err = ConvertDynamoToMap(details.TableName, details.Item)
-	fmt.Println("details.AttrMap", details.AttrMap)
+	var expr *models.UpdateExpressionCondition
+	ctx := context.Background()
+	details.PrimaryKeyMap, err = ConvertDynamoToMap(details.TableName, details.Key)
 	if err != nil {
 		c.JSON(errors.New("ValidationException", err).HTTPResponse(details))
 		return nil, nil
 	}
-	details.ExpressionAttributeMap, err = ConvertDynamoToMap(details.TableName, details.ExpressionAttributeValues)
-	fmt.Println("details.ExpressionAttributeMap", details.ExpressionAttributeMap)
-	if err != nil {
-		c.JSON(errors.New("ValidationException", err).HTTPResponse(details))
-		return nil, nil
-	}
-
+	details.ExpressionAttributeMap, _ = ConvertDynamoToMap(details.TableName, details.ExpressionAttributeValues)
 	for k, v := range details.ExpressionAttributeNames {
 		details.ConditionExpression = strings.ReplaceAll(details.ConditionExpression, k, v)
 	}
-	fmt.Println("condi", details.ConditionExpression)
-
-	res, mut, err := TransactPut(c.Request.Context(), details.TableName, details.AttrMap, nil, details.ConditionExpression, details.ExpressionAttributeMap, txn)
-	fmt.Println("res", res, "mut", mut, "err", err)
-	if err != nil {
-		c.JSON(errors.HTTPResponse(err, details))
-	} else {
-		var output map[string]interface{}
-		if details.ReturnValues == "NONE" {
-			output = nil
-		} else {
-			output, _ = ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(details.TableName, res))
-			output = map[string]interface{}{"Attributes": output}
-		}
+	eval, _ := utils.CreateConditionExpression(details.ConditionExpression, details.ExpressionAttributeMap)
+	tmpMap := map[string]interface{}{}
+	for k, v := range details.PrimaryKeyMap {
+		tmpMap[k] = v
 	}
-	// Create Spanner mutation for inserting/updating data
-	//mut := spanner.InsertOrUpdate(tableName, columns, values)
-	return mut, nil
-}
-
-func TransactPut(ctx context.Context, tableName string, putObj map[string]interface{}, expr *models.UpdateExpressionCondition, conditionExp string, expressionAttr map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
-	tableConf, err := config.GetTableConf(tableName)
-	if err != nil {
-		return nil, nil, err
-	}
-	sKey := tableConf.SortKey
-	pKey := tableConf.PartitionKey
-	var oldResp map[string]interface{}
-
-	oldResp, err = storage.GetStorageInstance().SpannerGet(ctx, tableName, putObj[pKey], putObj[sKey], nil)
-	fmt.Println("oldResp", oldResp)
-	if err != nil {
-		return nil, nil, err
-	}
-	_, mut, err := services.TransactWritePut(ctx, tableName, putObj, nil, conditionExp, expressionAttr, oldResp, txn)
-
-	if err != nil {
-		return nil, nil, err
-	}
-	return oldResp, mut, nil
-}
-
-func handleUpdateOperation(c *gin.Context, details models.UpdateAttr, txn *spanner.ReadWriteTransaction) (*spanner.Mutation, error) {
-	fmt.Println("inside handlePutOperation", details)
-	tableName := details.TableName
-	if tableName == "" {
-		return nil, fmt.Errorf("missing TableName in Put operation")
-	}
-	var err error
-	// Convert DynamoDB format to Go map
-	// item := make(map[string]interface{})
-	details.PrimaryKeyMap, err = ConvertDynamoToMap(details.TableName, details.Key)
-	fmt.Println("details.AttrMap", details.PrimaryKeyMap)
-	if err != nil {
-		c.JSON(errors.New("ValidationException", err).HTTPResponse(details))
-		return nil, nil
-	}
-	details.ExpressionAttributeMap, err = ConvertDynamoToMap(details.TableName, details.ExpressionAttributeValues)
-	fmt.Println("details.ExpressionAttributeMap", details.ExpressionAttributeMap)
-	if err != nil {
-		c.JSON(errors.New("ValidationException", err).HTTPResponse(details))
-		return nil, nil
-	}
-	_, mut, err := TransactWriteUpdateExpression(c.Request.Context(), details, txn)
-	if err != nil {
-		//c.JSON(errors.HTTPResponse(err, updateAttr))
-	}
-	fmt.Println("resp", mut)
-	return mut, nil
-}
-
-func handleDeleteOperation(c *gin.Context, details models.DeleteItemRequest, txn *spanner.ReadWriteTransaction) (*spanner.Mutation, error) {
-	if err := c.ShouldBindJSON(&details); err != nil {
-		c.JSON(errors.New("ValidationException", err).HTTPResponse(details))
-	} else {
-		logger.LogDebug(details)
-		if allow := services.MayIReadOrWrite(details.TableName, true, "DeleteItem"); !allow {
-			c.JSON(http.StatusOK, gin.H{})
-			return nil, nil
-		}
-		details.PrimaryKeyMap, err = ConvertDynamoToMap(details.TableName, details.Key)
+	if len(eval.Attributes) > 0 || expr != nil {
+		status, err := storage.EvaluateConditionalExpression(ctx, txn, details.TableName, tmpMap, eval, expr)
 		if err != nil {
-			c.JSON(errors.New("ValidationException", err).HTTPResponse(details))
-			return nil, nil
+			return nil, err
 		}
-		details.ExpressionAttributeMap, err = ConvertDynamoToMap(details.TableName, details.ExpressionAttributeValues)
-		if err != nil {
-			c.JSON(errors.New("ValidationException", err).HTTPResponse(details))
-			return nil, nil
+		if !status {
+			return nil, errors.New("ConditionalCheckFailedException", eval, expr)
 		}
-
-		for k, v := range details.ExpressionAttributeNames {
-			details.ConditionExpression = strings.ReplaceAll(details.ConditionExpression, k, v)
-		}
-
-		oldRes, _ := services.GetWithProjection(c.Request.Context(), details.TableName, details.PrimaryKeyMap, "", nil)
-		mut, err := services.TransactWriteDelete(c.Request.Context(), details.TableName, details.PrimaryKeyMap, details.ConditionExpression, details.ExpressionAttributeMap, nil, txn)
-		if err == nil {
-			output, _ := ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(details.TableName, oldRes))
-			c.JSON(http.StatusOK, map[string]interface{}{"Attributes": output})
-		} else {
-			c.JSON(errors.HTTPResponse(err, details))
-		}
-		return mut, nil
 	}
 	return nil, nil
+}
+
+// handleWriteOperation processes different write operations (Put, Update, Delete) on a specified table in Spanner
+// using the provided transaction, context, and operation details. It returns a mutation, response map, and error.
+func handleWriteOperation(c *gin.Context, details interface{}, txn *spanner.ReadWriteTransaction, operationType string) (*spanner.Mutation, map[string]interface{}, error) {
+	// Initialize variables for operation details and error handling
+	var tableName string
+	var err error
+	var attrMap, expressionAttr map[string]interface{}
+	var conditionExpression string
+	var primaryKeyMap map[string]interface{}
+	var returnValues string
+
+	// Determine operation type and extract relevant details
+	switch operationType {
+	case "Put":
+		putDetails := details.(models.PutItemRequest)
+		tableName = putDetails.TableName
+		attrMap, err = ConvertDynamoToMap(tableName, putDetails.Item)
+		expressionAttr, err = ConvertDynamoToMap(tableName, putDetails.ExpressionAttributeValues)
+		conditionExpression = putDetails.ConditionExpression
+		returnValues = putDetails.ReturnValues
+	case "Update":
+		updateDetails := details.(models.UpdateAttr)
+		tableName = updateDetails.TableName
+		primaryKeyMap, err = ConvertDynamoToMap(tableName, updateDetails.Key)
+		expressionAttr, err = ConvertDynamoToMap(tableName, updateDetails.ExpressionAttributeValues)
+		conditionExpression = updateDetails.ConditionExpression
+		returnValues = updateDetails.ReturnValues
+	case "Delete":
+		deleteDetails := details.(models.DeleteItemRequest)
+		tableName = deleteDetails.TableName
+		primaryKeyMap, err = ConvertDynamoToMap(tableName, deleteDetails.Key)
+		expressionAttr, err = ConvertDynamoToMap(tableName, deleteDetails.ExpressionAttributeValues)
+		conditionExpression = deleteDetails.ConditionExpression
+		returnValues = deleteDetails.ReturnValues
+	default:
+		return nil, nil, fmt.Errorf("invalid operation type: %s", operationType)
+	}
+
+	// Validate table name
+	if tableName == "" {
+		return nil, nil, fmt.Errorf("missing TableName in %s operation", operationType)
+	}
+
+	// Handle conversion errors
+	if err != nil {
+		c.JSON(errors.New("ValidationException", err).HTTPResponse(details))
+		return nil, nil, nil
+	}
+
+	// Replace expression attribute names in condition expression
+	if details, ok := details.(interface{ GetExpressionAttributeNames() map[string]string }); ok {
+		for k, v := range details.GetExpressionAttributeNames() {
+			conditionExpression = strings.ReplaceAll(conditionExpression, k, v)
+		}
+	}
+
+	var mut *spanner.Mutation
+	var resp map[string]interface{}
+
+	switch operationType {
+	// Execute the appropriate transaction operation based on type
+	case "Put":
+		resp, mut, err = services.TransactPut(c.Request.Context(), tableName, attrMap, nil, conditionExpression, expressionAttr, txn)
+	case "Update":
+		updateDetails := details.(models.UpdateAttr)
+		resp, mut, err = TransactWriteUpdateExpression(c.Request.Context(), updateDetails, txn)
+	case "Delete":
+		oldRes, _ := services.GetWithProjection(c.Request.Context(), tableName, primaryKeyMap, "", nil)
+		mut, err = services.TransactWriteDelete(c.Request.Context(), tableName, primaryKeyMap, conditionExpression, expressionAttr, nil, txn)
+		if err == nil {
+			resp, _ = ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(tableName, oldRes))
+		}
+	}
+
+	if err != nil {
+		// Handle operation errors
+		c.JSON(errors.HTTPResponse(err, details))
+		return nil, nil, err
+	}
+
+	var output map[string]interface{}
+	// Prepare output based on return values
+	switch returnValues {
+	case "NONE":
+		output = nil
+	default:
+		output, _ = ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(tableName, resp))
+	}
+
+	return mut, output, nil
 }

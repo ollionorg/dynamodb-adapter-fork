@@ -22,6 +22,20 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
 
+type SpannerConfig struct {
+	ProjectID        string `yaml:"project_id"`
+	InstanceID       string `yaml:"instance_id"`
+	DatabaseName     string `yaml:"database_name"`
+	QueryLimit       int64  `yaml:"query_limit"`
+	DynamoQueryLimit int32  `yaml:"dynamo_query_limit"` //dynamo_query_limit
+}
+
+type Config struct {
+	Spanner SpannerConfig `yaml:"spanner"`
+}
+
+var GlobalConfig *Config
+
 // Meta struct
 type Meta struct {
 	TableName                 string                              `json:"TableName"`
@@ -158,7 +172,7 @@ type TableConfig struct {
 	Indices          map[string]TableConfig `json:"Indices,omitempty"`
 	GCSSourcePath    string                 `json:"GcsSourcePath,omitempty"`
 	DDBIndexName     string                 `json:"DdbIndexName,omitempty"`
-	SpannerIndexName string                 `json:"Table,omitempty"`
+	SpannerIndexName string                 `json:"SpannerIndexName,omitempty"`
 	IsPadded         bool                   `json:"IsPadded,omitempty"`
 	IsComplement     bool                   `json:"IsComplement,omitempty"`
 	TableSource      string                 `json:"TableSource,omitempty"`
@@ -191,6 +205,8 @@ type BatchPutItem struct {
 	Item map[string]*dynamodb.AttributeValue `json:"Item"`
 }
 
+var DbConfigMap map[string]TableConfig
+
 // TableDDL - this contains the DDL
 var TableDDL map[string]map[string]string
 
@@ -208,10 +224,10 @@ var OriginalColResponse map[string]string
 
 func init() {
 	TableDDL = make(map[string]map[string]string)
-	TableDDL["dynamodb_adapter_table_ddl"] = map[string]string{"tableName": "STRING(MAX)", "column": "STRING(MAX)", "dataType": "STRING(MAX)", "originalColumn": "STRING(MAX)"}
+	TableDDL["dynamodb_adapter_table_ddl"] = map[string]string{"tableName": "S", "column": "S", "dynamoDataType": "S", "originalColumn": "S", "partitionKey": "S", "sortKey": "S", "spannerIndexName": "S", "actualTable": "S", "spannerDataType": "S"}
 	TableDDL["dynamodb_adapter_config_manager"] = map[string]string{"tableName": "STRING(MAX)", "config": "STRING(MAX)", "cronTime": "STRING(MAX)", "uniqueValue": "STRING(MAX)", "enabledStream": "STRING(MAX)", "pubsubTopic": "STRING(MAX)"}
 	TableColumnMap = make(map[string][]string)
-	TableColumnMap["dynamodb_adapter_table_ddl"] = []string{"tableName", "column", "dataType", "originalColumn"}
+	TableColumnMap["dynamodb_adapter_table_ddl"] = []string{"tableName", "column", "dynamoDataType", "originalColumn", "partitionKey", "sortKey", "spannerIndexName", "actualTable", "spannerDataType"}
 	TableColumnMap["dynamodb_adapter_config_manager"] = []string{"tableName", "config", "cronTime", "uniqueValue", "enabledStream", "pubsubTopic"}
 	TableColChangeMap = make(map[string]struct{})
 	ColumnToOriginalCol = make(map[string]string)
@@ -286,9 +302,47 @@ type TransactWriteItemsRequest struct {
 
 // TransactWriteItem represents a single Put, Update, or Delete operation inside TransactWriteItems.
 type TransactWriteItem struct {
-	Put    PutItemRequest    `json:"Put,omitempty"`
-	Update UpdateAttr        `json:"Update,omitempty"`
-	Delete DeleteItemRequest `json:"Delete,omitempty"`
+	Put            PutItemRequest        `json:"Put,omitempty"`
+	Update         UpdateAttr            `json:"Update,omitempty"`
+	Delete         DeleteItemRequest     `json:"Delete,omitempty"`
+	ConditionCheck ConditionCheckRequest `json:"ConditionCheck,omitempty"`
+}
+
+type PutItem struct {
+	Item map[string]interface{} `json:"Item"`
+}
+
+type UpdateItem struct {
+	Key map[string]interface{} `json:"Key"`
+}
+
+type DeleteItem struct {
+	Key map[string]interface{} `json:"Key"`
+}
+
+type ConditionCheckItem struct {
+	Key map[string]interface{} `json:"Key"`
+}
+type TransactWriteItemOutput struct {
+	Put            *PutItem    `json:"Put,omitempty"`
+	Update         *UpdateItem `json:"Update,omitempty"`
+	Delete         *DeleteItem `json:"Delete,omitempty"`
+	ConditionCheck *struct{}   `json:"ConditionCheck,omitempty"`
+}
+
+type TransactWriteItemsOutput struct {
+	Item []map[string]interface{} `json:"Item"`
+}
+
+type ConditionCheckRequest struct {
+	TableName                 string                              `json:"TableName"`
+	Key                       map[string]*dynamodb.AttributeValue `json:"Key"`
+	PrimaryKeyMap             map[string]interface{}              `json:"PrimaryKeyMap"`
+	ReturnValues              string                              `json:"ReturnValuesOnConditionCheckFailure"`
+	ConditionExpression       string                              `json:"ConditionExpression"`
+	ExpressionAttributeMap    map[string]interface{}              `json:"ExpressionAttributeMap"`
+	ExpressionAttributeNames  map[string]string                   `json:"ExpressionAttributeNames"`
+	ExpressionAttributeValues map[string]*dynamodb.AttributeValue `json:"ExpressionAttributeValues"`
 }
 
 // PutItemRequest represents the structure of a Put request.
@@ -311,6 +365,7 @@ type UpdateItemRequest struct {
 	UpdateExpression          string                              `json:"UpdateExpression"`
 	ExpressionAttributeNames  map[string]string                   `json:"ExpressionAttributeNames,omitempty"`
 	ExpressionAttributeValues map[string]*dynamodb.AttributeValue `json:"ExpressionAttributeValues,omitempty"`
+	ReturnValues              string                              `json:"ReturnValuesOnConditionCheckFailure"`
 }
 
 // DeleteItemRequest represents the structure of a Delete request.
@@ -322,6 +377,7 @@ type DeleteItemRequest struct {
 	Key                       map[string]*dynamodb.AttributeValue `json:"Key"`
 	ExpressionAttributeValues map[string]*dynamodb.AttributeValue `json:"ExpressionAttributeValues"`
 	ExpressionAttributeNames  map[string]string                   `json:"ExpressionAttributeNames"`
+	ReturnValues              string                              `json:"ReturnValuesOnConditionCheckFailure"`
 }
 
 // ItemCollectionMetrics represents the item collection metrics.  (Add more fields as needed)

@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ahmetb/go-linq"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
@@ -33,7 +34,6 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 
 	"cloud.google.com/go/spanner"
-	"github.com/ahmetb/go-linq"
 	"google.golang.org/api/iterator"
 )
 
@@ -116,11 +116,15 @@ func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys 
 
 // ExecuteSpannerQuery - this will execute query on spanner database
 func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []string, isCountQuery bool, stmt spanner.Statement) ([]map[string]interface{}, error) {
+
 	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
 	}
+
 	itr := s.getSpannerClient(table).Single().WithTimestampBound(spanner.ExactStaleness(time.Second*10)).Query(ctx, stmt)
+
 	defer itr.Stop()
 	allRows := []map[string]interface{}{}
 	for {
@@ -147,6 +151,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 		}
 		allRows = append(allRows, singleRow)
 	}
+
 	return allRows, nil
 }
 
@@ -156,7 +161,18 @@ func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]inte
 	_, err := s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
 		for k, v := range m {
-			tmpMap[k] = v
+			switch v := v.(type) {
+			case []interface{}:
+				// Serialize lists to JSON
+				jsonValue, err := json.Marshal(v)
+				if err != nil {
+					return fmt.Errorf("failed to serialize column %s to JSON: %v", k, err)
+				}
+				tmpMap[k] = string(jsonValue)
+			default:
+				// Assign other types as-is
+				tmpMap[k] = v
+			}
 		}
 		if len(eval.Attributes) > 0 || expr != nil {
 			status, err := evaluateConditionalExpression(ctx, t, table, tmpMap, eval, expr)
@@ -173,7 +189,6 @@ func (s Storage) SpannerPut(ctx context.Context, table string, m map[string]inte
 		}
 		return s.performPutOperation(ctx, t, table, tmpMap)
 	})
-
 	return update, err
 }
 
@@ -302,12 +317,14 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 	} else {
 		key = spanner.Key{pValue}
 	}
+
 	updatedObj := map[string]interface{}{}
 	_, err = s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
 		for k, v := range m1 {
 			tmpMap[k] = v
 		}
+
 		if len(eval.Attributes) > 0 || expr != nil {
 			status, _ := evaluateConditionalExpression(ctx, t, table, tmpMap, eval, expr)
 			if !status {
@@ -324,88 +341,53 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return err
 		}
-		for k, v := range tmpMap {
-			v1, ok := rs[k]
-			if ok {
-				switch v1.(type) {
-				case int64:
-					v2, ok := v.(float64)
-					if !ok {
-						strV, ok := v.(string)
-						if !ok {
-							return errors.New("ValidationException", reflect.TypeOf(v).String())
-						}
-						v2, err = strconv.ParseFloat(strV, 64)
-						if err != nil {
-							return errors.New("ValidationException", reflect.TypeOf(v).String())
-						}
-						err = checkInifinty(v2, strV)
-						if err != nil {
-							return err
-						}
-					}
-					tmpMap[k] = v1.(int64) + int64(v2)
-					err = checkInifinty(float64(m[k].(int64)), m)
-					if err != nil {
-						return err
-					}
-				case float64:
-					v2, ok := v.(float64)
-					if !ok {
-						strV, ok := v.(string)
-						if !ok {
-							return errors.New("ValidationException", reflect.TypeOf(v).String())
-						}
-						v2, err = strconv.ParseFloat(strV, 64)
-						if err != nil {
-							return errors.New("ValidationException", reflect.TypeOf(v).String())
-						}
-						err = checkInifinty(v2, strV)
-						if err != nil {
-							return err
-						}
-					}
-					tmpMap[k] = v1.(float64) + v2
-					err = checkInifinty(m[k].(float64), m)
-					if err != nil {
-						return err
-					}
 
-				case []interface{}:
-					var ifaces1 []interface{}
-					ba, ok := v.([]byte)
-					if ok {
-						err = json.Unmarshal(ba, &ifaces1)
-						if err != nil {
-							logger.LogError(err, string(ba))
+		for k, v := range tmpMap {
+			if existingVal, ok := rs[k]; ok {
+				switch existingVal := existingVal.(type) {
+				case int64:
+					// Handling int64
+					v2, ok := v.(float64)
+					if !ok {
+						strV, ok := v.(string)
+						if !ok {
+							return errors.New("ValidationException", reflect.TypeOf(v).String())
 						}
-					} else {
-						ifaces1 = v.([]interface{})
+						v2, err = strconv.ParseFloat(strV, 64)
+						if err != nil {
+							return errors.New("ValidationException", reflect.TypeOf(v).String())
+						}
 					}
-					m1 := map[interface{}]struct{}{}
-					ifaces := v1.([]interface{})
-					for i := 0; i < len(ifaces); i++ {
-						m1[ifaces[i]] = struct{}{}
+					tmpMap[k] = existingVal + int64(v2)
+
+				case float64:
+					// Handling float64
+					v2, ok := v.(float64)
+					if !ok {
+						strV, ok := v.(string)
+						if !ok {
+							return errors.New("ValidationException", reflect.TypeOf(v).String())
+						}
+						v2, err = strconv.ParseFloat(strV, 64)
+						if err != nil {
+							return errors.New("ValidationException", reflect.TypeOf(v).String())
+						}
 					}
-					for i := 0; i < len(ifaces1); i++ {
-						m1[ifaces1[i]] = struct{}{}
-					}
-					ifaces = []interface{}{}
-					for k := range m1 {
-						ifaces = append(ifaces, k)
-					}
-					tmpMap[k] = ifaces
+					tmpMap[k] = existingVal + v2
+
 				default:
 					logger.LogDebug(reflect.TypeOf(v).String())
 				}
 			}
 		}
+
+		// Add partition and sort keys to the updated object
 		tmpMap[pKey] = pValue
 		if sValue != nil {
 			tmpMap[sKey] = sValue
 		}
-		ddl := models.TableDDL[table]
 
+		ddl := models.TableDDL[table]
 		for k, v := range tmpMap {
 			updatedObj[k] = v
 			t, ok := ddl[k]
@@ -416,6 +398,18 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 				}
 				tmpMap[k] = ba
 			}
+			switch v := v.(type) {
+			case []interface{}:
+				// Serialize lists to JSON
+				jsonValue, err := json.Marshal(v)
+				if err != nil {
+					return fmt.Errorf("failed to serialize column %s to JSON: %v", k, err)
+				}
+				tmpMap[k] = string(jsonValue)
+			default:
+				// Assign other types as-is
+				tmpMap[k] = v
+			}
 		}
 
 		mutation := spanner.InsertOrUpdateMap(table, tmpMap)
@@ -423,12 +417,13 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return errors.New("ResourceNotFoundException", err)
 		}
+
 		return nil
 	})
+
 	return updatedObj, err
 }
 
-// SpannerDel for delete operation on Spanner
 func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition) error {
 	tableConf, err := config.GetTableConf(table)
 	if err != nil {
@@ -447,6 +442,7 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 	var key spanner.Key
 	var m1 = make(map[string]interface{})
 
+	// Process primary and secondary keys
 	for k, v := range m {
 		m1[k] = v
 		if k == pKey {
@@ -466,19 +462,24 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 	} else {
 		key = spanner.Key{pValue}
 	}
+
 	_, err = s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
 		for k, v := range m {
 			tmpMap[k] = v
 		}
+
+		// Evaluate conditional expressions
 		if len(eval.Attributes) > 0 || expr != nil {
 			status, _ := evaluateConditionalExpression(ctx, t, table, m1, eval, expr)
 			if !status {
 				return errors.New("ConditionalCheckFailedException")
 			}
 		}
+
 		table = utils.ChangeTableNameForSpanner(table)
 
+		// Read the row
 		r, err := t.ReadRow(ctx, table, key, cols)
 		if err != nil {
 			return errors.New("ResourceNotFoundException", err)
@@ -487,6 +488,8 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return err
 		}
+
+		// Process and merge data for deletion
 		for k, v := range tmpMap {
 			v1, ok := rs[k]
 			if ok {
@@ -525,8 +528,10 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 		if sValue != nil {
 			tmpMap[sKey] = sValue
 		}
+
 		ddl := models.TableDDL[table]
 
+		// Handle special cases like BYTES(MAX) columns
 		for k, v := range tmpMap {
 			t, ok := ddl[k]
 			if t == "BYTES(MAX)" && ok {
@@ -537,6 +542,8 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 				tmpMap[k] = ba
 			}
 		}
+
+		// Perform the delete operation by updating the row
 		mutation := spanner.InsertOrUpdateMap(table, tmpMap)
 		err = t.BufferWrite([]*spanner.Mutation{mutation})
 		if err != nil {
@@ -548,8 +555,7 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 }
 
 // SpannerRemove - Spanner Remove functionality like update attribute
-func (s Storage) SpannerRemove(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition, colsToRemove []string) error {
-
+func (s Storage) SpannerRemove(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition, colsToRemove []string, oldRes map[string]interface{}) error {
 	_, err := s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 		tmpMap := map[string]interface{}{}
 		for k, v := range m {
@@ -561,10 +567,39 @@ func (s Storage) SpannerRemove(ctx context.Context, table string, m map[string]i
 				return errors.New("ConditionalCheckFailedException")
 			}
 		}
-		var null spanner.NullableValue
-		for _, col := range colsToRemove {
-			tmpMap[col] = null
+
+		// Process each removal target
+		for _, target := range colsToRemove {
+			if strings.Contains(target, "[") && strings.Contains(target, "]") {
+				// Handle list element removal
+				listAttr, idx := utils.ParseListRemoveTarget(target)
+				if val, ok := oldRes[listAttr]; ok {
+					if list, ok := val.([]interface{}); ok {
+						oldRes[listAttr] = utils.RemoveListElement(list, idx)
+						tmpMap[listAttr] = oldRes[listAttr]
+					}
+				}
+			} else {
+				// Direct column removal from oldRes
+				delete(oldRes, target)
+			}
 		}
+		// Handle special cases like BYTES(MAX) columns
+		for k, v := range tmpMap {
+			switch v := v.(type) {
+			case []interface{}:
+				// Serialize lists to JSON
+				jsonValue, err := json.Marshal(v)
+				if err != nil {
+					return fmt.Errorf("failed to serialize column %s to JSON: %v", k, err)
+				}
+				tmpMap[k] = string(jsonValue)
+			default:
+				// Assign other types as-is
+				tmpMap[k] = v
+			}
+		}
+
 		table = utils.ChangeTableNameForSpanner(table)
 		mutation := spanner.InsertOrUpdateMap(table, tmpMap)
 		err := t.BufferWrite([]*spanner.Mutation{mutation})
@@ -591,6 +626,18 @@ func (s Storage) SpannerBatchPut(ctx context.Context, table string, m []map[stri
 				}
 				m[i][k] = ba
 			}
+			switch v := v.(type) {
+			case []interface{}:
+				// Serialize lists to JSON
+				jsonValue, err := json.Marshal(v)
+				if err != nil {
+					return fmt.Errorf("failed to serialize column %s to JSON: %v", k, err)
+				}
+				m[i][k] = string(jsonValue)
+			default:
+				// Assign other types as-is
+				m[i][k] = v
+			}
 		}
 		mutations[i] = spanner.InsertOrUpdateMap(table, m[i])
 	}
@@ -613,9 +660,10 @@ func (s Storage) performPutOperation(ctx context.Context, t *spanner.ReadWriteTr
 			m[k] = ba
 		}
 	}
-
 	mutation := spanner.InsertOrUpdateMap(table, m)
+
 	mutations := []*spanner.Mutation{mutation}
+
 	err := t.BufferWrite(mutations)
 	if e := errors.AssignError(err); e != nil {
 		return e
@@ -673,7 +721,16 @@ func evaluateConditionalExpression(ctx context.Context, t *spanner.ReadWriteTran
 	}
 	if expr != nil {
 		for index := 0; index < len(expr.Field); index++ {
-			status := evaluateStatementFromRowMap(expr.Condition[index], expr.Field[index], rowMap)
+			colName := expr.Field[index]
+			if strings.HasPrefix(colName, "size(") {
+				// Extract attribute name from size function
+				sizeRegex := regexp.MustCompile(`size\((\w+)\)`)
+				matches := sizeRegex.FindStringSubmatch(colName)
+				if len(matches) == 2 {
+					colName = matches[1] // Extracted column name
+				}
+			}
+			status := evaluateStatementFromRowMap(expr.Condition[index], colName, rowMap)
 			tmp, ok := status.(bool)
 			if !ok || !tmp {
 				if v1, ok := expr.AddValues[expr.Field[index]]; ok {
@@ -725,6 +782,7 @@ func evaluateConditionalExpression(ctx context.Context, t *spanner.ReadWriteTran
 	if err != nil {
 		return false, err
 	}
+
 	return status, nil
 }
 
@@ -743,10 +801,46 @@ func evaluateStatementFromRowMap(conditionalExpression, colName string, rowMap m
 		_, ok := rowMap[colName]
 		return ok
 	}
+	// Handle size() function
+	if strings.HasPrefix(conditionalExpression, "size(") {
+		sizeRegex := regexp.MustCompile(`size\((\w+)\)`)
+		matches := sizeRegex.FindStringSubmatch(conditionalExpression)
+		if len(matches) == 2 {
+			attributeName := matches[1]
+
+			// Check if the attribute exists in rowMap
+			val, ok := rowMap[attributeName]
+			if !ok {
+				return errors.New("Attribute not found in row")
+			}
+
+			// Ensure the attribute is a list and calculate its size
+			switch v := val.(type) {
+			case []interface{}:
+				return len(v) // Return the size of the list
+			default:
+				return errors.New("size() function is only valid for list attributes")
+			}
+		} else {
+			return errors.New("Invalid size() function syntax")
+		}
+	}
 	return rowMap[conditionalExpression]
 }
 
-// parseRow - Converts Spanner row and datatypes to a map removing null columns from the result.
+// parseRow parses a single Spanner row into a map of column name to value.
+// It uses a column DDL map to determine the data type of each column and
+// parse it accordingly.
+//
+// Args:
+//
+//	r: The Spanner row to parse.
+//	colDDL: A map of column name to data type (e.g., "S", "B", "N", "BOOL", "SS", "BS", "NS").
+//
+// Returns:
+//
+//	A map of column name to value (map[string]interface{}), or an error if any occurs during parsing.
+//	Returns an empty map and nil error if the input row `r` is nil.
 func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{}, error) {
 	singleRow := make(map[string]interface{})
 	if r == nil {
@@ -762,131 +856,376 @@ func parseRow(r *spanner.Row, colDDL map[string]string) (map[string]interface{},
 		if !ok {
 			return nil, errors.New("ResourceNotFoundException", k)
 		}
+
+		var err error
 		switch v {
-		case "STRING(MAX)":
-			var s spanner.NullString
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.StringVal
-			}
-		case "BYTES(MAX)":
-			var s []byte
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if len(s) > 0 {
-				var m interface{}
-				err := json.Unmarshal(s, &m)
-				if err != nil {
-					logger.LogError(err, string(s))
-					singleRow[k] = string(s)
-					continue
-				}
-				val1, ok := m.(string)
-				if ok {
-					if base64Regexp.MatchString(val1) {
-						ba, err := base64.StdEncoding.DecodeString(val1)
-						if err == nil {
-							var sample interface{}
-							err = json.Unmarshal(ba, &sample)
-							if err == nil {
-								singleRow[k] = sample
-								continue
-							} else {
-								singleRow[k] = string(s)
-								continue
-							}
-						}
-					}
-				}
-
-				if mp, ok := m.(map[string]interface{}); ok {
-					for k, v := range mp {
-						if val, ok := v.(string); ok {
-							if base64Regexp.MatchString(val) {
-								ba, err := base64.StdEncoding.DecodeString(val)
-								if err == nil {
-									var sample interface{}
-									err = json.Unmarshal(ba, &sample)
-									if err == nil {
-										mp[k] = sample
-										m = mp
-									}
-								}
-							}
-						}
-					}
-				}
-				singleRow[k] = m
-			}
-		case "INT64":
-			var s spanner.NullInt64
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.Int64
-			}
-		case "FLOAT64":
-			var s spanner.NullFloat64
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.Float64
-			}
-		case "NUMERIC":
-			var s spanner.NullNumeric
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
-			}
-			if !s.IsNull() {
-				if s.Numeric.IsInt() {
-					tmp, _ := s.Numeric.Float64()
-					singleRow[k] = int64(tmp)
-				} else {
-					singleRow[k], _ = s.Numeric.Float64()
-				}
-			}
+		case "S":
+			err = parseStringColumn(r, i, k, singleRow)
+		case "B":
+			err = parseBytesColumn(r, i, k, singleRow)
+		case "N":
+			err = parseNumericColumn(r, i, k, singleRow)
 		case "BOOL":
-			var s spanner.NullBool
-			err := r.Column(i, &s)
-			if err != nil {
-				if strings.Contains(err.Error(), "ambiguous column name") {
-					continue
-				}
-				return nil, errors.New("ValidationException", err, k)
+			err = parseBoolColumn(r, i, k, singleRow)
+		case "SS":
+			err = parseStringArrayColumn(r, i, k, singleRow)
+		case "BS":
+			err = parseByteArrayColumn(r, i, k, singleRow)
+		case "NS":
+			err = parseNumberArrayColumn(r, i, k, singleRow)
+		case "NULL":
+			err = parseNullColumn(r, i, k, singleRow)
+		case "L":
+			err = parseListColumn(r, i, k, singleRow)
+		default:
+			return nil, errors.New("TypeNotFound", err, k)
+		}
 
-			}
-			if !s.IsNull() {
-				singleRow[k] = s.Bool
-			}
+		if err != nil {
+			return nil, errors.New("ValidationException", err, k)
 		}
 	}
 	return singleRow, nil
+}
+
+// parseStringColumn parses a string column from a Spanner row.
+//
+// Args:
+//
+//	r: The Spanner row.
+//	idx: The column index.
+//	col: The column name.
+//	row: The map to store the parsed value.
+//
+// Returns:
+//
+//	An error if any occurs during column retrieval.
+func parseStringColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s spanner.NullString
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if s.IsNull() {
+		row[col] = nil
+		return nil
+	} else {
+		row[col] = s.StringVal
+	}
+	return nil
+}
+
+// parseBytesColumn parses a bytes column from a Spanner row.  It attempts to
+// unmarshal the bytes as JSON. If unmarshalling fails, it stores the raw
+// byte string as a string.
+//
+// Args:
+//
+//	r: The Spanner row.
+//	idx: The column index.
+//	col: The column name.
+//	row: The map to store the parsed value.
+//
+// Returns:
+//
+//	An error if any occurs during column retrieval.
+func parseBytesColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s []byte
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+
+	if len(s) > 0 {
+		var m interface{}
+		if err := json.Unmarshal(s, &m); err != nil {
+			// Instead of an error while unmarshalling fall back to the raw string.
+			row[col] = string(s)
+			return nil
+		}
+		m = processDecodedData(m)
+		row[col] = m
+	}
+	return nil
+}
+
+// parseNumericColumn parses a numeric (float64) column from a Spanner row.
+//
+// Args:
+//   r: The Spanner row.
+//   idx: The column index.
+//   col: The column name.
+//   row: The map to store the parsed value.
+//
+// Returns:
+//   An error if any occurs during column retrieval.
+
+func parseNumericColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s spanner.NullFloat64
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if s.IsNull() {
+		row[col] = nil
+		return nil
+	} else {
+		row[col] = s.Float64
+	}
+	return nil
+}
+
+// parseBoolColumn parses a boolean column from a Spanner row.
+//
+// Args:
+//
+//	r: The Spanner row.
+//	idx: The column index.
+//	col: The column name.
+//	row: The map to store the parsed value.
+//
+// Returns:
+//
+//	An error if any occurs during column retrieval.
+func parseBoolColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s spanner.NullBool
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if s.IsNull() {
+		row[col] = nil
+	} else {
+		row[col] = s.Bool
+	}
+	return nil
+}
+
+// parseStringArrayColumn parses a string array column from a Spanner row.
+//
+// Args:
+//
+//	r: The Spanner row.
+//	idx: The column index.
+//	col: The column name.
+//	row: The map to store the parsed value.
+//
+// Returns:
+//
+//	An error if any occurs during column retrieval.
+func parseStringArrayColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s []spanner.NullString
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	var temp []string
+	for _, val := range s {
+		temp = append(temp, val.StringVal)
+	}
+	if len(s) > 0 {
+		row[col] = temp
+	}
+	return nil
+}
+
+// parseByteArrayColumn parses a byte array column from a Spanner row.
+//
+// Args:
+//
+//	r: The Spanner row.
+//	idx: The column index.
+//	col: The column name.
+//	row: The map to store the parsed value.
+//
+// Returns:
+//
+//	An error if any occurs during column retrieval.
+func parseByteArrayColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var b [][]byte
+	err := r.Column(idx, &b)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if len(b) > 0 {
+		row[col] = b
+	}
+	return nil
+}
+
+// parseNumberArrayColumn parses a numeric (float64) array column from a Spanner row.
+//
+// Args:
+//
+//	r: The Spanner row.
+//	idx: The column index.
+//	col: The column name.
+//	row: The map to store the parsed value.
+//
+// Returns:
+//
+//	An error if any occurs during column retrieval.
+func parseNumberArrayColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var nums []spanner.NullFloat64
+	err := r.Column(idx, &nums)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	var temp []float64
+	for _, val := range nums {
+		if val.Valid {
+			temp = append(temp, val.Float64)
+		}
+	}
+	if len(nums) > 0 {
+		row[col] = temp
+	}
+	return nil
+}
+
+// parseListColumn parses a list column from a Spanner row.
+//
+// Args:
+//
+//	r: The Spanner row.
+//	idx: The column index.
+//	col: The column name.
+//	row: The map to store the parsed value.
+//
+// Returns:
+//
+//	An error if any occurs during column retrieval.
+func parseListColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var jsonValue spanner.NullJSON
+	err := r.Column(idx, &jsonValue)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if !jsonValue.IsNull() {
+		parsed := parseDynamoDBJSON(jsonValue.Value)
+		row[col] = parsed
+	}
+	return nil
+}
+
+// parseDynamoDBJSON parses a DynamoDB JSON structure into a Go native type.
+//
+// Args:
+//
+//	value: The value to parse, which can be a map, list, or primitive type.
+//
+// Returns:
+//
+//	The parsed Go native type (interface{}).
+func parseDynamoDBJSON(value interface{}) interface{} {
+	if value == nil {
+		return nil
+	}
+
+	switch v := value.(type) {
+	case map[string]interface{}:
+		for key, val := range v {
+			switch key {
+			case "S": // String
+				return val.(string)
+			case "N": // Number
+				num, _ := strconv.ParseFloat(val.(string), 64)
+				return num
+			case "BOOL": // Boolean
+				return val.(bool)
+			case "NULL": // Null
+				if val.(bool) {
+					return nil
+				}
+				return value
+			case "M": // Map (nested object)
+				result := make(map[string]interface{})
+				for k, nestedVal := range val.(map[string]interface{}) {
+					result[k] = parseDynamoDBJSON(nestedVal)
+				}
+				return result
+			case "L": // List
+				list := val.([]interface{})
+				result := make([]interface{}, len(list))
+				for i, item := range list {
+					result[i] = parseDynamoDBJSON(item) // Recursively parse each list item
+				}
+				return result
+			}
+		}
+	case []interface{}: // Handle direct list structures
+		result := make([]interface{}, len(v))
+		for i, item := range v {
+			result[i] = parseDynamoDBJSON(item)
+		}
+		return result
+	}
+
+	return value // Return as-is for unsupported types
+}
+
+// processDecodedData attempts to decode base64 encoded strings within the
+// given data structure.  It handles both strings and maps of strings.  This
+// function is used to handle cases where JSON data is stored as a base64
+// encoded string within a Spanner column.
+//
+// Args:
+//
+//	m: The data structure to process (interface{}).  Can be a string or a
+//	   map[string]interface{}.
+//
+// Returns:
+//
+//	The processed data structure (interface{}).  If base64 decoding and JSON
+//	unmarshalling are successful, the decoded JSON will be returned. Otherwise,
+//	the original data structure is returned.
+func processDecodedData(m interface{}) interface{} {
+	if val, ok := m.(string); ok && base64Regexp.MatchString(val) {
+		if ba, err := base64.StdEncoding.DecodeString(val); err == nil {
+			var sample interface{}
+			if err := json.Unmarshal(ba, &sample); err == nil {
+				return sample
+			}
+		}
+	}
+	if mp, ok := m.(map[string]interface{}); ok {
+		for k, v := range mp {
+			if val, ok := v.(string); ok && base64Regexp.MatchString(val) {
+				if ba, err := base64.StdEncoding.DecodeString(val); err == nil {
+					var sample interface{}
+					if err := json.Unmarshal(ba, &sample); err == nil {
+						mp[k] = sample
+					}
+				}
+			}
+		}
+	}
+	return m
+}
+
+// parseNullColumn handles NULL values for any column type.
+//
+// Args:
+//
+//	r: The Spanner row.
+//	idx: The column index.
+//	col: The column name.
+//	row: The map to store the parsed value.
+//
+// Returns:
+//
+//	An error if any occurs during column retrieval.
+func parseNullColumn(r *spanner.Row, idx int, col string, row map[string]interface{}) error {
+	var s spanner.NullString
+	err := r.Column(idx, &s)
+	if err != nil && !strings.Contains(err.Error(), "ambiguous column name") {
+		return err
+	}
+	if s.IsNull() {
+		row[col] = nil
+		return nil
+	}
+	return nil
 }
 
 func checkInifinty(value float64, logData interface{}) error {
@@ -900,53 +1239,90 @@ func checkInifinty(value float64, logData interface{}) error {
 	return nil
 }
 
-// SpannerPut - Spanner put insert a single object
+// SpannerTransactWritePut performs a transactional write operation in Spanner.
+// It checks for conditional expressions and updates the database accordingly.
+//
+// Args:
+//
+//	ctx: The context for managing request deadlines and cancellations.
+//	table: The name of the table to update.
+//	m: The map containing the data to be inserted or updated.
+//	eval: The evaluation criteria for processing conditional expressions.
+//	expr: The UpdateExpressionCondition to be checked before writing.
+//	txn: The Spanner ReadWriteTransaction.
+//
+// Returns:
+//
+//	A map of updated data, a Spanner mutation, and an error if any occurs.
 func (s Storage) SpannerTransactWritePut(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	// Initialize the update map and mutation
 	update := map[string]interface{}{}
 	var mutation *spanner.Mutation
 
+	// Copy input map to a temporary map for processing
 	tmpMap := map[string]interface{}{}
 	for k, v := range m {
 		tmpMap[k] = v
 	}
+
+	// Evaluate conditional expressions if present
 	if len(eval.Attributes) > 0 || expr != nil {
 		status, err := evaluateConditionalExpression(ctx, txn, table, tmpMap, eval, expr)
 		if err != nil {
-			return m, mutation, err
+			return m, nil, err
 		}
 		if !status {
-			return m, mutation, errors.New("ConditionalCheckFailedException", eval, expr)
+			return m, nil, errors.New("ConditionalCheckFailedException", eval, expr)
 		}
 	}
+
+	// Update table name to match Spanner's naming convention
 	table = utils.ChangeTableNameForSpanner(table)
+
+	// Update the map with processed data
 	for k, v := range tmpMap {
 		update[k] = v
 	}
-	var err error
-	mutation, err = s.performTransactPutOperation(ctx, txn, table, tmpMap)
+
+	// Perform the transactional put operation
+	mutation, err := s.performTransactPutOperation(ctx, txn, table, tmpMap)
 	return update, mutation, err
 }
 
+// performTransactPutOperation performs a transactional put operation in Spanner.
+//
+// ctx: The context of the transaction.
+//
+// txn: The Spanner ReadWriteTransaction.
+//
+// table: The name of the Spanner table.
+//
+// m: The input map of data to be inserted or updated.
+//
+// Returns:
+//
+//	A Spanner mutation and an error if any occurs.
 func (s Storage) performTransactPutOperation(ctx context.Context, txn *spanner.ReadWriteTransaction, table string, m map[string]interface{}) (*spanner.Mutation, error) {
 	ddl := models.TableDDL[table]
+
+	// Iterate through the map and process each column
 	for k, v := range m {
+		// If the column is a BYTES(MAX) type, marshal the data to JSON
 		t, ok := ddl[k]
 		if t == "BYTES(MAX)" && ok {
 			ba, err := json.Marshal(v)
 			if err != nil {
+				// Return a ValidationException error if there is an issue with marshaling
 				return nil, errors.New("ValidationException", err)
 			}
+			// Update the map with the marshaled data
 			m[k] = ba
 		}
 	}
 
+	// Create a Spanner mutation for the InsertOrUpdateMap operation
 	mutation := spanner.InsertOrUpdateMap(table, m)
-	fmt.Println(mutation)
-	//mutations := []*spanner.Mutation{mutation}
-	// err := t.BufferWrite(mutations)
-	// if e := errors.AssignError(err); e != nil {
-	// 	return e
-	// }
+
 	return mutation, nil
 }
 
@@ -1226,6 +1602,13 @@ func (s Storage) TransactWriteSpannerAdd(ctx context.Context, table string, m ma
 	return updatedObj, mutation, err
 }
 
+// TransactWriteSpannerRemove - Spanner Remove functionality like update attribute inside a transaction
+//
+// This is used in the context of a transaction, and it will remove the given columns from the given
+// table. The condition expression in the eval and expr parameters will be evaluated and if it fails,
+// this will return an error.
+//
+// The colsToRemove parameter should contain the names of the columns to be removed.
 func (s Storage) TransactWriteSpannerRemove(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition, colsToRemove []string, txn *spanner.ReadWriteTransaction) (*spanner.Mutation, error) {
 
 	//_, err := s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
@@ -1291,4 +1674,141 @@ func (s Storage) TransactWriteSpannerDelete(ctx context.Context, table string, m
 	mutation := spanner.Delete(table, key)
 
 	return mutation, nil
+}
+
+// EvaluateConditionalExpression evaluates a conditional expression for a given Spanner transaction.
+// It checks for the presence of necessary table schema and configuration, handles conditional fields,
+// and updates the map with computed values if conditions are met. It returns a boolean status indicating
+// whether the condition was satisfied and an error if any occurs during processing.
+
+func EvaluateConditionalExpression(ctx context.Context, t *spanner.ReadWriteTransaction, table string, m map[string]interface{}, e *models.Eval, expr *models.UpdateExpressionCondition) (bool, error) {
+	// Retrieve table schema DDL
+	colDDL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+	if !ok {
+		return false, errors.New("ResourceNotFoundException", table)
+	}
+
+	// Get table configuration
+	tableConf, err := config.GetTableConf(table)
+	if err != nil {
+		return false, err
+	}
+
+	// Validate primary key presence
+	pKey := tableConf.PartitionKey
+	pValue, ok := m[pKey]
+	if !ok {
+		return false, errors.New("ValidationException", pKey)
+	}
+
+	// Construct Spanner key based on primary and sort keys
+	var key spanner.Key
+	sKey := tableConf.SortKey
+	if sKey != "" {
+		sValue, ok := m[sKey]
+		if !ok {
+			return false, errors.New("ValidationException", sKey)
+		}
+		key = spanner.Key{pValue, sValue}
+	} else {
+		key = spanner.Key{pValue}
+	}
+
+	// Determine columns to read
+	var cols []string
+	if expr != nil {
+		cols = append(e.Cols, expr.Field...)
+		for k := range expr.AddValues {
+			cols = append(e.Cols, k)
+		}
+	} else {
+		cols = e.Cols
+	}
+
+	// Filter columns based on table schema
+	linq.From(cols).IntersectByT(linq.From(models.TableColumnMap[utils.ChangeTableNameForSpanner(table)]), func(str string) string {
+		return str
+	}).ToSlice(&cols)
+
+	// Read row from Spanner
+	r, err := t.ReadRow(ctx, utils.ChangeTableNameForSpanner(table), key, cols)
+	if e := errors.AssignError(err); e != nil {
+		return false, e
+	}
+
+	// Parse row into a map
+	rowMap, err := parseRow(r, colDDL)
+	if err != nil {
+		return false, err
+	}
+
+	// Evaluate conditions
+	if expr != nil {
+		for index := 0; index < len(expr.Field); index++ {
+			colName := expr.Field[index]
+			if strings.HasPrefix(colName, "size(") {
+				// Extract attribute name from size function
+				sizeRegex := regexp.MustCompile(`size\((\w+)\)`)
+				matches := sizeRegex.FindStringSubmatch(colName)
+				if len(matches) == 2 {
+					colName = matches[1] // Extracted column name
+				}
+			}
+			status := evaluateStatementFromRowMap(expr.Condition[index], colName, rowMap)
+			tmp, ok := status.(bool)
+			if !ok || !tmp {
+				if v1, ok := expr.AddValues[expr.Field[index]]; ok {
+					tmp, ok := rowMap[expr.Field[index]].(float64)
+					if ok {
+						m[expr.Field[index]] = tmp + v1
+						err = checkInifinty(m[expr.Field[index]].(float64), expr)
+						if err != nil {
+							return false, err
+						}
+					}
+				} else {
+					delete(m, expr.Field[index])
+				}
+			} else {
+				if v1, ok := expr.AddValues[expr.Field[index]]; ok {
+					tmp, ok := m[expr.Field[index]].(float64)
+					if ok {
+						m[expr.Field[index]] = tmp + v1
+						err = checkInifinty(m[expr.Field[index]].(float64), expr)
+						if err != nil {
+							return false, err
+						}
+					}
+				}
+			}
+			delete(expr.AddValues, expr.Field[index])
+		}
+
+		// Apply additional values
+		for k, v := range expr.AddValues {
+			val, ok := rowMap[k].(float64)
+			if ok {
+				m[k] = val + v
+				err = checkInifinty(m[k].(float64), expr)
+				if err != nil {
+					return false, err
+				}
+			} else {
+				m[k] = v
+			}
+		}
+	}
+
+	// Evaluate main attributes
+	for i := 0; i < len(e.Attributes); i++ {
+		e.ValueMap[e.Tokens[i]] = evaluateStatementFromRowMap(e.Attributes[i], e.Cols[i], rowMap)
+	}
+
+	// Execute the expression evaluation
+	status, err := utils.EvaluateExpression(e)
+	if err != nil {
+		return false, err
+	}
+
+	return status, nil
 }
