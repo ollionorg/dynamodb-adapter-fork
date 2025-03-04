@@ -793,7 +793,7 @@ func ExecuteStatementForInsert(ctx context.Context, executeStatement models.Exec
 		}
 		newMap[columnName] = convertedValue
 	}
-	result, err := Put(ctx, executeStatement.TableName, newMap, nil, "", nil, nil)
+	result, err := Put(ctx, executeStatement.TableName, newMap, nil, "", nil, nil, nil)
 	if err != nil {
 		return result, err
 	}

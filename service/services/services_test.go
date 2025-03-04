@@ -804,14 +804,14 @@ func TestConvertType(t *testing.T) {
 		expected   interface{}
 		expectErr  bool
 	}{
-		{"name", "'Hello World'", "STRING(MAX)", "Hello World", false},
-		{"age", "25", "INT64", int64(25), false},
-		{"weight", "70.5", "FLOAT64", 70.5, false},
-		{"score", "100.00", "NUMERIC", 100.0, false},
+		{"name", "'Hello World'", "S", "Hello World", false},
+		{"age", "25", "N", 25.0, false},
+		{"weight", "70.5", "N", 70.5, false},
+		{"score", "100.00", "N", 100.0, false},
 		{"isActive", "true", "BOOL", true, false},
 		{"isEnabled", "false", "BOOL", false, false},
-		{"invalid", "abc", "INT64", nil, true},
-		{"invalid", "xyz", "FLOAT64", nil, true},
+		{"invalid", "abc", "N", nil, true},
+		{"invalid", "xyz", "N", nil, true},
 		{"unsupported", "test", "UNKNOWN_TYPE", nil, true},
 	}
 
