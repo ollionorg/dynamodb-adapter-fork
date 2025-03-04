@@ -17,6 +17,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -53,7 +54,6 @@ func InitDBAPI(r *gin.Engine) {
 // RouteRequest - parse X-Amz-Target and call appropiate handler
 func (h *APIHandler) RouteRequest(c *gin.Context) {
 	var amzTarget = c.Request.Header.Get("X-Amz-Target")
-	//svc := services.GetServiceInstance()
 	switch strings.Split(amzTarget, ".")[1] {
 	case "BatchGetItem":
 		h.BatchGetItem(c)
@@ -521,7 +521,8 @@ func (h *APIHandler) Scan(c *gin.Context) {
 					c.JSON(errors.HTTPResponse(err, "LastEvaluatedKeyChangeError"))
 				}
 			}
-			c.JSON(http.StatusOK, res)
+			jsonData, _ := json.Marshal(res)
+			c.JSON(http.StatusOK, json.RawMessage(jsonData))
 		} else {
 			c.JSON(errors.HTTPResponse(err, meta))
 		}
@@ -746,11 +747,13 @@ func (h *APIHandler) TransactGetItems(c *gin.Context) {
 	}
 }
 
-// TransactGetDataSingleTable is a utility function to fetch data for a single Get operation within TransactGetItems.
-// It takes a context, a GetItemRequest, and a Service interface, and returns a slice of maps and an error.
-// The function first converts the DynamoDB-style Keys to a Spanner-style KeyArray.
-// Then it calls the TransactGetItem function on the Service interface to fetch the data from Spanner.
-// Finally, it converts the Spanner-style output to DynamoDB-style and returns it.
+// TransactGetDataSingleTable - fetch data from Spanner using Spanner TransactGetItems function
+//
+// This function takes a context, a TransactGetItemsRequest, a service, and returns a slice of maps and an error.
+// The function first gets the table configuration using the table name from the TransactGetItemsRequest.
+// Then it converts the projection expression to a slice of column names.
+// Then it creates two slices, pValues and sValues, to store the partition key and the sort key values.
+// Finally, it calls the SpannerTransactGetItems function on the Storage interface to fetch the data from Spanner.
 func transactGetDataSingleTable(ctx context.Context, transactGetMeta models.TransactGetItemsRequest, svc services.Service) ([]map[string]interface{}, error) {
 	// Convert DynamoDB Keys to Spanner KeyArray
 	var err1 error
@@ -758,8 +761,13 @@ func transactGetDataSingleTable(ctx context.Context, transactGetMeta models.Tran
 	tableProjectionCols := make(map[string][]string)
 	pValues := make(map[string]interface{})
 	sValues := make(map[string]interface{})
+
+	// Iterate over the TransactGetItemsRequest
 	for _, transactItem := range transactGetMeta.TransactItems {
+		// Get the GetItemRequest
 		getRequest := transactItem.Get
+
+		// Convert the DynamoDB KeyArray to a Spanner-style KeyArray
 		getRequest.KeyArray, err1 = ConvertDynamoArrayToMapArray(getRequest.TableName, []map[string]*dynamodb.AttributeValue{getRequest.Keys})
 		if err1 != nil {
 			return nil, nil
@@ -768,11 +776,13 @@ func transactGetDataSingleTable(ctx context.Context, transactGetMeta models.Tran
 		// Change ExpressionAttributeNames to Spanner-style
 		getRequest.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(getRequest.TableName, getRequest.ExpressionAttributeNames)
 
+		// Get the projection columns
 		projectionCols, pvalues, svalues, _ := svc.TransactGetProjectionCols(ctx, getRequest)
 		tableProjectionCols[getRequest.TableName] = projectionCols
 		pValues[getRequest.TableName] = pvalues
 		sValues[getRequest.TableName] = svalues
 	}
-	return svc.TransactGetItem(ctx, tableProjectionCols, pValues, sValues)
 
+	// Fetch data from Spanner
+	return svc.TransactGetItem(ctx, tableProjectionCols, pValues, sValues)
 }

@@ -18,6 +18,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"strconv"
 	"strings"
@@ -33,9 +34,6 @@ import (
 	"github.com/cloudspannerecosystem/dynamodb-adapter/utils"
 )
 
-type ServiceInterface interface {
-}
-
 type Storage interface {
 	SpannerTransactGetItems(ctx context.Context, tableProjectionCols map[string][]string, pValues map[string]interface{}, sValues map[string]interface{}) ([]map[string]interface{}, error)
 }
@@ -50,9 +48,10 @@ type spannerService struct {
 	st            Storage
 }
 
-var service Service // Service interface variable
-
-var once sync.Once
+var (
+	service Service
+	once    sync.Once
+)
 
 // SetServiceInstance sets the service instance (for dependency injection)
 func SetServiceInstance(s Service) {
@@ -130,7 +129,6 @@ func Put(ctx context.Context, tableName string, putObj map[string]interface{}, e
 	for k, v := range newResp {
 		updateResp[k] = v
 	}
-
 	return updateResp, nil
 }
 
@@ -618,7 +616,7 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 	if err != nil {
 		return nil, err
 	}
-	err = storage.GetStorageInstance().SpannerRemove(ctx, tableName, updateAttr.PrimaryKeyMap, e, expr, colsToRemove)
+	err = storage.GetStorageInstance().SpannerRemove(ctx, tableName, updateAttr.PrimaryKeyMap, e, expr, colsToRemove, oldRes)
 	if err != nil {
 		return nil, err
 	}
@@ -629,29 +627,38 @@ func Remove(ctx context.Context, tableName string, updateAttr models.UpdateAttr,
 	for k, v := range oldRes {
 		updateResp[k] = v
 	}
-
-	for i := 0; i < len(colsToRemove); i++ {
-		delete(updateResp, colsToRemove[i])
+	for _, target := range colsToRemove {
+		if strings.Contains(target, "[") && strings.Contains(target, "]") {
+			// Handle list index removal
+			listAttr, idx := utils.ParseListRemoveTarget(target)
+			if idx != -1 {
+				if list, ok := oldRes[listAttr].([]interface{}); ok {
+					oldRes[listAttr] = utils.RemoveListElement(list, idx)
+				}
+			} else {
+				// Handle invalid list index format
+				return nil, fmt.Errorf("invalid list index format for target %q", target)
+			}
+		} else {
+			// Handle direct column removal
+			delete(updateResp, target)
+		}
 	}
 	return updateResp, nil
 }
 
-// TransactGetItem - fetch data from Spanner using Spanner TransactGetItems function
-//
-// This function takes a context, a GetItemRequest, a slice of keyMap, a projection expression string, and an expression attribute names map, and returns a slice of maps and an error.
-//
-// The function first gets the table configuration using the table name from the GetItemRequest.
-// Then it converts the projection expression to a slice of column names.
-// Then it creates two slices, pValues and sValues, to store the partition key and the sort key values.
-// Finally, it calls the SpannerTransactGetItems function on the Storage interface to fetch the data from Spanner.
+// TransactGetProjectionCols gets the projection columns from the TransactGet request
 func (s *spannerService) TransactGetProjectionCols(ctx context.Context, getRequest models.GetItemRequest) ([]string, []interface{}, []interface{}, error) {
-
+	// Get the table configuration
 	tableConf, err := config.GetTableConf(getRequest.TableName)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
+	// Get the projection columns
 	projectionCols := getSpannerProjections(getRequest.ProjectionExpression, tableConf.ActualTable, getRequest.ExpressionAttributeNames)
 
+	// Get the partition and sort keys
 	var pValues []interface{}
 	var sValues []interface{}
 	for i := 0; i < len(getRequest.KeyArray); i++ {
@@ -663,10 +670,13 @@ func (s *spannerService) TransactGetProjectionCols(ctx context.Context, getReque
 		pValues = append(pValues, pValue)
 	}
 
+	// Return the projection columns and the keys
 	return projectionCols, pValues, sValues, nil
-
 }
 
 func (s *spannerService) TransactGetItem(ctx context.Context, tableProjectionCols map[string][]string, pValues map[string]interface{}, sValues map[string]interface{}) ([]map[string]interface{}, error) {
+	// Call the SpannerTransactGetItems method on the Storage interface
+	// This method fetches data from Spanner based on the provided table projection columns,
+	// partition key values, and sort key values.
 	return s.st.SpannerTransactGetItems(ctx, tableProjectionCols, pValues, sValues)
 }
