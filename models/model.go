@@ -320,11 +320,16 @@ type ConsumedCapacity struct {
 }
 
 type TransactGetItemResponse struct {
-	TableName string                 `json:"TableName"`
-	Item      map[string]interface{} `json:"Item"`
+	//TableName string                 `json:"TableName"`
+	Item map[string]interface{} `json:"Item"`
 }
 
 // TransactGetItemsResponse represents the overall response structure for multiple TransactGetItems.
 type TransactGetItemsResponse struct {
 	Responses []TransactGetItemResponse `json:"Responses"`
+}
+
+type ResponseItem struct {
+	TableName interface{}            `json:"TableName"`
+	Item      map[string]interface{} `json:"Item"`
 }
