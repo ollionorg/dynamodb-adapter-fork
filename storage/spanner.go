@@ -1352,6 +1352,16 @@ func checkInifinty(value float64, logData interface{}) error {
 	return nil
 }
 
+// InsertUpdateOrDeleteStatement performs insert, update, or delete operations on a Spanner database table
+// based on the provided query map.
+//
+// Parameters:
+// - ctx: The context for managing request-scoped values, cancelations, and timeouts.
+// - query: A pointer to DeleteUpdateQueryMap, which holds the table name and query details for execution.
+//
+// Returns:
+// - map[string]interface{}: A map that could potentially hold results for further processing (currently returns nil).
+// - error: An error object, if any error occurs during the transaction execution.
 func (s *Storage) InsertUpdateOrDeleteStatement(ctx context.Context, query *translator.DeleteUpdateQueryMap) (map[string]interface{}, error) {
 	_, err := s.getSpannerClient(query.Table).ReadWriteTransactionWithOptions(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		_, err := txn.Update(ctx, *buildStmt(query))

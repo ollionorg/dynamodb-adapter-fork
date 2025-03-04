@@ -26,6 +26,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/ahmetb/go-linq"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/config"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/pkg/errors"
@@ -41,6 +42,14 @@ const (
 
 var (
 	re = regexp.MustCompile(regexPattern)
+)
+
+var (
+	// Regular expressions to match the beginning of the query
+	selectRegex = regexp.MustCompile(`(?i)^\s*SELECT`)
+	insertRegex = regexp.MustCompile(`(?i)^\s*INSERT`)
+	updateRegex = regexp.MustCompile(`(?i)^\s*UPDATE`)
+	deleteRegex = regexp.MustCompile(`(?i)^\s*DELETE`)
 )
 
 // getSpannerProjections makes a projection array of columns
@@ -629,12 +638,6 @@ func ExecuteStatement(ctx context.Context, executeStatement models.ExecuteStatem
 	query := strings.TrimSpace(executeStatement.Statement) // Remove any leading or trailing whitespace
 	queryUpper := strings.ToUpper(query)
 
-	// Regular expressions to match the beginning of the query
-	selectRegex := regexp.MustCompile(`(?i)^\s*SELECT`)
-	insertRegex := regexp.MustCompile(`(?i)^\s*INSERT`)
-	updateRegex := regexp.MustCompile(`(?i)^\s*UPDATE`)
-	deleteRegex := regexp.MustCompile(`(?i)^\s*DELETE`)
-
 	switch {
 	case selectRegex.MatchString(queryUpper):
 		return ExecuteStatementForSelect(ctx, executeStatement)
@@ -650,6 +653,14 @@ func ExecuteStatement(ctx context.Context, executeStatement models.ExecuteStatem
 
 }
 
+// parsePartiQlToSpannerforSelect converts a PartiQL statement with parameters to a Spanner SQL statement with parameters.
+// Parameters:
+// - ctx: The context for managing request-scoped values, cancelations, and timeouts.
+// - executeStatement: The object containing the PartiQL query string and parameters to be translated.
+//
+// Returns:
+// - spanner.Statement: A Google Cloud Spanner statement ready to be executed.
+// - error: An error object, if an error occurs during translation or parameter conversion.
 func parsePartiQlToSpannerforSelect(ctx context.Context, executeStatement models.ExecuteStatement) (spanner.Statement, error) {
 	stmt := spanner.Statement{}
 	paramMap := make(map[string]interface{})
@@ -661,41 +672,59 @@ func parsePartiQlToSpannerforSelect(ctx context.Context, executeStatement models
 	if err != nil {
 		return stmt, err
 	}
+
 	queryStmt := queryMap.SpannerQuery
 	if executeStatement.Limit != 0 {
 		queryMap.Limit = strconv.FormatInt(executeStatement.Limit, 10)
 	}
 
-	for i, val := range executeStatement.Parameters {
+	err = handleParameters(executeStatement.Parameters, queryMap.Where, &paramMap, &queryStmt)
+	if err != nil {
+		return stmt, err
+	}
+
+	stmt.SQL = queryMap.SpannerQuery
+	stmt.Params = paramMap
+	return stmt, nil
+}
+func handleParameters(parameters []*dynamodb.AttributeValue, whereConditions []translator.Condition, paramMap *map[string]interface{}, queryStmt *string) error {
+	for i, val := range parameters {
 		if val.S != nil {
-			paramMap[queryMap.Where[i].Column] = *val.S
-			queryStmt = strings.Replace(queryStmt, "?", "@val"+strconv.Itoa(i), 1)
+			(*paramMap)[whereConditions[i].Column] = *val.S
+			*queryStmt = strings.Replace(*queryStmt, "?", "@val"+strconv.Itoa(i), 1)
 		} else if val.N != nil {
 			floatVal, err := strconv.ParseFloat(*val.N, 64)
 			if err != nil {
-				return stmt, fmt.Errorf("failed to convert the string type to the float")
+				return fmt.Errorf("failed to convert the string type to the float")
 			}
-			paramMap[queryMap.Where[i].Column] = floatVal
-			queryStmt = strings.Replace(queryStmt, "?", "@val"+strconv.Itoa(i), 1)
+			(*paramMap)[whereConditions[i].Column] = floatVal
+			*queryStmt = strings.Replace(*queryStmt, "?", "@val"+strconv.Itoa(i), 1)
 		} else if val.BOOL != nil {
-			paramMap[queryMap.Where[i].Column] = *val.BOOL
-			queryStmt = strings.Replace(queryStmt, "?", "@val"+strconv.Itoa(i), 1)
+			(*paramMap)[whereConditions[i].Column] = *val.BOOL
+			*queryStmt = strings.Replace(*queryStmt, "?", "@val"+strconv.Itoa(i), 1)
 		} else if val.SS != nil {
 			ss := make([]interface{}, len(val.SS))
 			for index, v := range val.SS {
 				ss[index] = *v
 			}
-			paramMap[queryMap.Where[i].Column] = ss
-			queryStmt = strings.Replace(queryStmt, "?", "@val"+strconv.Itoa(i), 1)
+			(*paramMap)[whereConditions[i].Column] = ss
+			*queryStmt = strings.Replace(*queryStmt, "?", "@val"+strconv.Itoa(i), 1)
 		} else {
-			return stmt, fmt.Errorf("unsupported datatype")
+			return fmt.Errorf("unsupported datatype")
 		}
 	}
-	stmt.SQL = queryMap.SpannerQuery
-	stmt.Params = paramMap
-	return stmt, nil
+	return nil
 }
 
+// ExecuteStatementForSelect executes a select statement on a Spanner database, converting a PartiQL statement to a Spanner statement.
+//
+// Parameters:
+// - ctx: Context for managing request-scoped values, cancellations, and timeouts.
+// - executeStatement: Contains the PartiQL select statement and parameters to be executed.
+//
+// Returns:
+// - map[string]interface{}: A map containing the fetched items under the key "Items".
+// - error: An error object, if any issues arise during the execution process.
 func ExecuteStatementForSelect(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
 	spannerStatement, err := parsePartiQlToSpannerforSelect(ctx, executeStatement)
 	if err != nil {
@@ -711,6 +740,16 @@ func ExecuteStatementForSelect(ctx context.Context, executeStatement models.Exec
 	return finalResp, nil
 }
 
+// ExecuteStatementForInsert executes an insert statement on a Spanner database by converting a PartiQL insert statement
+// to a Spanner compatible format and then performing the insert operation.
+//
+// Parameters:
+// - ctx: The context for managing request-scoped values, cancellations, and timeouts.
+// - executeStatement: Contains the PartiQL insert statement and the attributes to be inserted.
+//
+// Returns:
+// - map[string]interface{}: A map containing the result of the insert operation.
+// - error: An error object, if any issues arise during the execution process.
 func ExecuteStatementForInsert(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
 	translatorObj := translator.Translator{}
 	parsedQueryObj, err := translatorObj.ToSpannerInsert(executeStatement.Statement)
@@ -760,6 +799,17 @@ func ExecuteStatementForInsert(ctx context.Context, executeStatement models.Exec
 	}
 	return result, nil
 }
+
+// ExecuteStatementForUpdate executes an update statement on a Spanner database by converting a PartiQL update statement
+// to a Spanner compatible format and performing the update operation.
+//
+// Parameters:
+// - ctx: The context for managing request-scoped values, cancellations, and timeouts.
+// - executeStatement: Contains the PartiQL update statement and the parameters for the update.
+//
+// Returns:
+// - map[string]interface{}: A map containing the result of the update operation or nil if successful.
+// - error: An error object, if any issues arise during the execution process.
 func ExecuteStatementForUpdate(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
 	translatorObj := translator.Translator{}
 	parsedQueryObj, err := translatorObj.ToSpannerUpdate(executeStatement.Statement)
@@ -802,6 +852,16 @@ func ExecuteStatementForUpdate(ctx context.Context, executeStatement models.Exec
 	return nil, err
 }
 
+// ExecuteStatementForDelete executes a delete statement on a Spanner database by converting a PartiQL delete statement
+// to a Spanner compatible format and performing the delete operation.
+//
+// Parameters:
+// - ctx: The context for managing request-scoped values, cancellations, and timeouts.
+// - executeStatement: Contains the PartiQL delete statement and the parameters for the deletion.
+//
+// Returns:
+// - map[string]interface{}: A map containing the result of the delete operation.
+// - error: An error object, if any issues arise during the execution process.
 func ExecuteStatementForDelete(ctx context.Context, executeStatement models.ExecuteStatement) (map[string]interface{}, error) {
 
 	translatorObj := translator.Translator{}
@@ -833,44 +893,19 @@ func ExecuteStatementForDelete(ctx context.Context, executeStatement models.Exec
 	return res, nil
 }
 
-func trimSingleQuotes(s string) string {
-	// Check if the string starts and ends with single quotes
-	if strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'") {
-		// Remove the quotes from the beginning and end
-		s = s[1 : len(s)-1]
-	}
-	return s
-}
-
 func convertType(columnName string, val interface{}, columntype string) (interface{}, error) {
 	switch columntype {
-	case "STRING(MAX)", "S":
+	case "S":
 		// Ensure the value is a string
-		return trimSingleQuotes(fmt.Sprintf("%v", val)), nil
+		return utils.TrimSingleQuotes(fmt.Sprintf("%v", val)), nil
 
-	case "INT64":
-		// Convert to int64
-		intValue, err := strconv.ParseInt(fmt.Sprintf("%v", val), 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("error converting to int64: %v", err)
-		}
-		return intValue, nil
-
-	case "FLOAT64", "N":
+	case "N":
 		// Convert to float64
 		floatValue, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
 		if err != nil {
 			return nil, fmt.Errorf("error converting to float64: %v", err)
 		}
 		return floatValue, nil
-
-	case "NUMERIC":
-		// Treat same as FLOAT64 here or use a specific library for decimal types
-		numValue, err := strconv.ParseFloat(fmt.Sprintf("%v", val), 64)
-		if err != nil {
-			return nil, fmt.Errorf("error converting to numeric: %v", err)
-		}
-		return numValue, nil
 
 	case "BOOL":
 		// Convert to boolean
@@ -879,6 +914,13 @@ func convertType(columnName string, val interface{}, columntype string) (interfa
 			return nil, fmt.Errorf("error converting to bool: %v", err)
 		}
 		return boolValue, nil
+	case "L":
+		// Convert to list (array or slice in Go)
+		listValue, ok := val.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("expected a list for column %s, but got: %v", columnName, val)
+		}
+		return listValue, nil // Return the slice as is or manipulate as neede
 
 	default:
 		return nil, fmt.Errorf("unsupported data type: %s", columntype)
