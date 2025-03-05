@@ -61,9 +61,9 @@ func (h *APIHandler) RouteRequest(c *gin.Context) {
 	case "BatchWriteItem":
 		BatchWriteItem(c)
 	case "DeleteItem":
-		DeleteItem(c)
+		h.DeleteItem(c)
 	case "GetItem":
-		GetItemMeta(c)
+		h.GetItemMeta(c)
 	case "PutItem":
 		UpdateMeta(c)
 	case "Query":
@@ -71,7 +71,7 @@ func (h *APIHandler) RouteRequest(c *gin.Context) {
 	case "Scan":
 		Scan(c)
 	case "UpdateItem":
-		Update(c)
+		h.Update(c)
 	case "TransactWriteItems":
 		h.TransactWriteItems(c)
 	default:
@@ -278,7 +278,7 @@ func QueryTable(c *gin.Context) {
 // @Failure 500 {object} gin.H "{"errorMessage":"We had a problem with our server. Try again later.","errorCode":"E0001"}"
 // @Router /getWithProjection/ [post]
 // @Failure 401 {object} gin.H "{"errorMessage":"API access not allowed","errorCode": "E0005"}"
-func GetItemMeta(c *gin.Context) {
+func (h *APIHandler) GetItemMeta(c *gin.Context) {
 	defer PanicHandler(c)
 	defer c.Request.Body.Close()
 	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
@@ -306,7 +306,7 @@ func GetItemMeta(c *gin.Context) {
 			return
 		}
 		getItemMeta.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(getItemMeta.TableName, getItemMeta.ExpressionAttributeNames)
-		res, rowErr := services.GetWithProjection(c.Request.Context(), getItemMeta.TableName, getItemMeta.PrimaryKeyMap, getItemMeta.ProjectionExpression, getItemMeta.ExpressionAttributeNames)
+		res, rowErr := h.svc.GetWithProjection(c.Request.Context(), getItemMeta.TableName, getItemMeta.PrimaryKeyMap, getItemMeta.ProjectionExpression, getItemMeta.ExpressionAttributeNames)
 		if rowErr == nil {
 			changedColumns := ChangeResponseToOriginalColumns(getItemMeta.TableName, res)
 			output, err := ChangeMaptoDynamoMap(changedColumns)
@@ -411,7 +411,7 @@ func batchGetDataSingleTable(ctx context.Context, batchGetWithProjectionMeta mod
 // @Failure 500 {object} gin.H "{"errorMessage":"We had a problem with our server. Try again later.","errorCode":"E0001"}"
 // @Router /deleteItem/ [post]
 // @Failure 401 {object} gin.H "{"errorMessage":"API access not allowed","errorCode": "E0005"}"
-func DeleteItem(c *gin.Context) {
+func (h *APIHandler) DeleteItem(c *gin.Context) {
 	defer PanicHandler(c)
 	defer c.Request.Body.Close()
 	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
@@ -447,7 +447,7 @@ func DeleteItem(c *gin.Context) {
 			deleteItem.ConditionExpression = strings.ReplaceAll(deleteItem.ConditionExpression, k, v)
 		}
 
-		oldRes, _ := services.GetWithProjection(c.Request.Context(), deleteItem.TableName, deleteItem.PrimaryKeyMap, "", nil)
+		oldRes, _ := h.svc.GetWithProjection(c.Request.Context(), deleteItem.TableName, deleteItem.PrimaryKeyMap, "", nil)
 		err := services.Delete(c.Request.Context(), deleteItem.TableName, deleteItem.PrimaryKeyMap, deleteItem.ConditionExpression, deleteItem.ExpressionAttributeMap, nil)
 		if err == nil {
 			output, _ := ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(deleteItem.TableName, oldRes))
@@ -540,7 +540,7 @@ func Scan(c *gin.Context) {
 // @Failure 500 {object} gin.H "{"errorMessage":"We had a problem with our server. Try again later.","errorCode":"E0001"}"
 // @Router /update/ [post]
 // @Failure 401 {object} gin.H "{"errorMessage":"API access not allowed","errorCode": "E0005"}"
-func Update(c *gin.Context) {
+func (h *APIHandler) Update(c *gin.Context) {
 	defer PanicHandler(c)
 	defer c.Request.Body.Close()
 	carrier := opentracing.HTTPHeadersCarrier(c.Request.Header)
@@ -570,7 +570,7 @@ func Update(c *gin.Context) {
 			c.JSON(errors.New("ValidationException", err).HTTPResponse(updateAttr))
 			return
 		}
-		resp, err := UpdateExpression(c.Request.Context(), updateAttr)
+		resp, err := UpdateExpression(c.Request.Context(), updateAttr, h.svc)
 		if err != nil {
 			c.JSON(errors.HTTPResponse(err, updateAttr))
 		} else {
@@ -703,7 +703,7 @@ func (h *APIHandler) TransactWriteItems(c *gin.Context) {
 	}
 	storageInstance := storage.GetStorageInstance()
 	spannerClient, _ := storageInstance.GetSpannerClient()
-
+	fmt.Println("spannerClient", spannerClient)
 	ctx := context.Background()
 	var resp models.TransactWriteItemsOutput
 	var resultItems []map[string]interface{}
@@ -724,13 +724,13 @@ func (h *APIHandler) TransactWriteItems(c *gin.Context) {
 					return err
 				}
 			case transactItem.Put.Item != nil:
-				mut, result, err = handleWriteOperation(c, transactItem.Put, txn, "Put")
+				mut, result, err = handleWriteOperation(c, transactItem.Put, txn, "Put", h.svc)
 				resultItems = append(resultItems, map[string]interface{}{"Put": result})
 			case transactItem.Update.Key != nil:
-				mut, result, err = handleWriteOperation(c, transactItem.Update, txn, "Update")
+				mut, result, err = handleWriteOperation(c, transactItem.Update, txn, "Update", h.svc)
 				resultItems = append(resultItems, map[string]interface{}{"Update": result})
 			case transactItem.Delete.Key != nil:
-				mut, result, err = handleWriteOperation(c, transactItem.Delete, txn, "Delete")
+				mut, result, err = handleWriteOperation(c, transactItem.Delete, txn, "Delete", h.svc)
 				resultItems = append(resultItems, map[string]interface{}{"Delete": result})
 
 			}
@@ -790,7 +790,7 @@ func handleConditionCheck(c *gin.Context, details models.ConditionCheckRequest, 
 
 // handleWriteOperation processes different write operations (Put, Update, Delete) on a specified table in Spanner
 // using the provided transaction, context, and operation details. It returns a mutation, response map, and error.
-func handleWriteOperation(c *gin.Context, details interface{}, txn *spanner.ReadWriteTransaction, operationType string) (*spanner.Mutation, map[string]interface{}, error) {
+func handleWriteOperation(c *gin.Context, details interface{}, txn *spanner.ReadWriteTransaction, operationType string, svc services.Service) (*spanner.Mutation, map[string]interface{}, error) {
 	// Initialize variables for operation details and error handling
 	var tableName string
 	var err error
@@ -804,21 +804,21 @@ func handleWriteOperation(c *gin.Context, details interface{}, txn *spanner.Read
 	case "Put":
 		putDetails := details.(models.PutItemRequest)
 		tableName = putDetails.TableName
-		attrMap, err = ConvertDynamoToMap(tableName, putDetails.Item)
+		attrMap, _ = ConvertDynamoToMap(tableName, putDetails.Item)
 		expressionAttr, err = ConvertDynamoToMap(tableName, putDetails.ExpressionAttributeValues)
 		conditionExpression = putDetails.ConditionExpression
 		returnValues = putDetails.ReturnValues
 	case "Update":
 		updateDetails := details.(models.UpdateAttr)
 		tableName = updateDetails.TableName
-		primaryKeyMap, err = ConvertDynamoToMap(tableName, updateDetails.Key)
+		primaryKeyMap, _ = ConvertDynamoToMap(tableName, updateDetails.Key)
 		expressionAttr, err = ConvertDynamoToMap(tableName, updateDetails.ExpressionAttributeValues)
 		conditionExpression = updateDetails.ConditionExpression
 		returnValues = updateDetails.ReturnValues
 	case "Delete":
 		deleteDetails := details.(models.DeleteItemRequest)
 		tableName = deleteDetails.TableName
-		primaryKeyMap, err = ConvertDynamoToMap(tableName, deleteDetails.Key)
+		primaryKeyMap, _ = ConvertDynamoToMap(tableName, deleteDetails.Key)
 		expressionAttr, err = ConvertDynamoToMap(tableName, deleteDetails.ExpressionAttributeValues)
 		conditionExpression = deleteDetails.ConditionExpression
 		returnValues = deleteDetails.ReturnValues
@@ -850,12 +850,12 @@ func handleWriteOperation(c *gin.Context, details interface{}, txn *spanner.Read
 	switch operationType {
 	// Execute the appropriate transaction operation based on type
 	case "Put":
-		resp, mut, err = services.TransactPut(c.Request.Context(), tableName, attrMap, nil, conditionExpression, expressionAttr, txn)
+		resp, mut, err = TransactPut(c.Request.Context(), tableName, attrMap, nil, conditionExpression, expressionAttr, txn, svc)
 	case "Update":
 		updateDetails := details.(models.UpdateAttr)
-		resp, mut, err = TransactWriteUpdateExpression(c.Request.Context(), updateDetails, txn)
+		resp, mut, err = TransactWriteUpdateExpression(c.Request.Context(), updateDetails, txn, svc)
 	case "Delete":
-		oldRes, _ := services.GetWithProjection(c.Request.Context(), tableName, primaryKeyMap, "", nil)
+		oldRes, _ := svc.GetWithProjection(c.Request.Context(), tableName, primaryKeyMap, "", nil)
 		mut, err = services.TransactWriteDelete(c.Request.Context(), tableName, primaryKeyMap, conditionExpression, expressionAttr, nil, txn)
 		if err == nil {
 			resp, _ = ChangeMaptoDynamoMap(ChangeResponseToOriginalColumns(tableName, oldRes))
@@ -878,4 +878,33 @@ func handleWriteOperation(c *gin.Context, details interface{}, txn *spanner.Read
 	}
 
 	return mut, output, nil
+}
+
+// TransactPut manages a transactional put operation in Spanner, ensuring old data is fetched and conditions are evaluated.
+func TransactPut(ctx context.Context, tableName string, putObj map[string]interface{}, expr *models.UpdateExpressionCondition, conditionExp string, expressionAttr map[string]interface{}, txn *spanner.ReadWriteTransaction, svc services.Service) (map[string]interface{}, *spanner.Mutation, error) {
+	// Fetch the table configuration to retrieve partition and sort keys
+	tableConf, err := config.GetTableConf(tableName)
+	if err != nil {
+		return nil, nil, err
+	}
+	sKey := tableConf.SortKey
+	pKey := tableConf.PartitionKey
+
+	// Initialize a map to store the old response
+	var oldResp map[string]interface{}
+
+	// Retrieve the existing item from Spanner using partition and sort keys
+	oldResp, err = storage.GetStorageInstance().SpannerGet(ctx, tableName, putObj[pKey], putObj[sKey], nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Perform the transactional write operation with the provided object and conditions
+	res, mut, err := svc.TransactWritePut(ctx, tableName, putObj, nil, conditionExp, expressionAttr, oldResp, txn)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Return the result and the mutation
+	return res, mut, nil
 }

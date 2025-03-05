@@ -42,7 +42,9 @@ func (s *Storage) GetSpannerClient() (*spanner.Client, error) {
 // storage - global instance of storage
 var storage *Storage
 
-func initSpannerDriver() *spanner.Client {
+var spannerDriverFunc = InitSpannerDriver
+
+func InitSpannerDriver() *spanner.Client {
 	conf := spanner.ClientConfig{}
 	str := "projects/" + models.GlobalConfig.Spanner.ProjectID + "/instances/" + models.GlobalConfig.Spanner.InstanceID + "/databases/" + models.GlobalConfig.Spanner.DatabaseName
 	Client, err := spanner.NewClientWithConfig(context.Background(), str, conf)
@@ -56,7 +58,7 @@ func initSpannerDriver() *spanner.Client {
 func InitializeDriver() {
 	storage = new(Storage)
 	storage.spannerClient = make(map[string]*spanner.Client)
-	storage.spannerClient[models.GlobalConfig.Spanner.InstanceID] = initSpannerDriver()
+	storage.spannerClient[models.GlobalConfig.Spanner.InstanceID] = spannerDriverFunc()
 
 }
 

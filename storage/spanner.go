@@ -1285,7 +1285,7 @@ func (s Storage) SpannerTransactWritePut(ctx context.Context, table string, m ma
 	}
 
 	// Perform the transactional put operation
-	mutation, err := s.performTransactPutOperation(ctx, txn, table, tmpMap)
+	mutation, err := s.performTransactPutOperation(table, tmpMap)
 	return update, mutation, err
 }
 
@@ -1302,7 +1302,7 @@ func (s Storage) SpannerTransactWritePut(ctx context.Context, table string, m ma
 // Returns:
 //
 //	A Spanner mutation and an error if any occurs.
-func (s Storage) performTransactPutOperation(ctx context.Context, txn *spanner.ReadWriteTransaction, table string, m map[string]interface{}) (*spanner.Mutation, error) {
+func (s Storage) performTransactPutOperation(table string, m map[string]interface{}) (*spanner.Mutation, error) {
 	ddl := models.TableDDL[table]
 
 	// Iterate through the map and process each column

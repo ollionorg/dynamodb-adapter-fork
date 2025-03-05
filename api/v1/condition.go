@@ -455,11 +455,11 @@ func performOperation(ctx context.Context, action string, actionValue string, up
 }
 
 // UpdateExpression performs an expression
-func UpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr) (interface{}, error) {
+func UpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr, svc services.Service) (interface{}, error) {
 	updateAtrr.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(updateAtrr.TableName, updateAtrr.ExpressionAttributeNames)
 	var oldRes map[string]interface{}
 	if updateAtrr.ReturnValues != "NONE" {
-		oldRes, _ = services.GetWithProjection(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, "", nil)
+		oldRes, _ = svc.GetWithProjection(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, "", nil)
 	}
 	var resp map[string]interface{}
 	var actVal = make(map[string]interface{})
@@ -1030,14 +1030,14 @@ func convertNumber(output map[string]interface{}, v reflect.Value) error {
 // TransactWriteUpdateExpression is used to update an item in the database
 // with a transaction. If the condition expression fails, the transaction is
 // rolled back.
-func TransactWriteUpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+func TransactWriteUpdateExpression(ctx context.Context, updateAtrr models.UpdateAttr, txn *spanner.ReadWriteTransaction, svc services.Service) (map[string]interface{}, *spanner.Mutation, error) {
 	// replace the placeholder column names with the original column names
 	updateAtrr.ExpressionAttributeNames = ChangeColumnToSpannerExpressionName(updateAtrr.TableName, updateAtrr.ExpressionAttributeNames)
 	// get the old item if it exists
 	var oldRes map[string]interface{}
 	var mut *spanner.Mutation
 	if updateAtrr.ReturnValues != "NONE" {
-		oldRes, _ = services.GetWithProjection(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, "", nil)
+		oldRes, _ = svc.GetWithProjection(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, "", nil)
 	}
 	// loop through each operation and perform it
 	var resp map[string]interface{}
@@ -1049,7 +1049,7 @@ func TransactWriteUpdateExpression(ctx context.Context, updateAtrr models.Update
 	}
 	m := extractOperations(updateAtrr.UpdateExpression)
 	for k, v := range m {
-		res, acVal, mutation, err := TransactWritePerformOperation(ctx, k, v, updateAtrr, oldRes, txn)
+		res, acVal, mutation, err := TransactWritePerformOperation(ctx, k, v, updateAtrr, oldRes, txn, svc)
 		resp = res
 		er = err
 		mut = mutation
@@ -1113,26 +1113,26 @@ func TransactWriteUpdateExpression(ctx context.Context, updateAtrr models.Update
 //
 //	A map of attribute names to their new values (map[string]interface{}), the action value (map[string]interface{}),
 //	a Spanner mutation object, and an error.
-func TransactWritePerformOperation(ctx context.Context, action string, actionValue string, updateAtrr models.UpdateAttr, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, map[string]interface{}, *spanner.Mutation, error) {
+func TransactWritePerformOperation(ctx context.Context, action string, actionValue string, updateAtrr models.UpdateAttr, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction, svc services.Service) (map[string]interface{}, map[string]interface{}, *spanner.Mutation, error) {
 	switch {
 	case action == "DELETE":
 		// perform delete
 		m, expr := parseActionValue(actionValue, updateAtrr, true, oldRes)
-		res, mut, err := services.TransactWriteDel(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, expr, txn)
+		res, mut, err := svc.TransactWriteDel(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, expr, txn)
 		return res, m, mut, err
 	case action == "SET":
 		// Update data in table
 		m, expr := parseActionValue(actionValue, updateAtrr, false, oldRes)
-		res, mut, err := services.TransactWritePut(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes, txn)
+		res, mut, err := svc.TransactWritePut(ctx, updateAtrr.TableName, m, expr, updateAtrr.ConditionExpression, updateAtrr.ExpressionAttributeMap, oldRes, txn)
 		return res, m, mut, err
 	case action == "ADD":
 		// Add data in table
 		m, expr := parseActionValue(actionValue, updateAtrr, true, oldRes)
-		res, mut, err := services.TransactWriteAdd(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, updateAtrr.ExpressionAttributeMap, expr, oldRes, txn)
+		res, mut, err := svc.TransactWriteAdd(ctx, updateAtrr.TableName, updateAtrr.PrimaryKeyMap, updateAtrr.ConditionExpression, m, updateAtrr.ExpressionAttributeMap, expr, oldRes, txn)
 		return res, m, mut, err
 
 	case action == "REMOVE":
-		res, mut, err := services.TransactWriteRemove(ctx, updateAtrr.TableName, updateAtrr, actionValue, nil, oldRes, txn)
+		res, mut, err := svc.TransactWriteRemove(ctx, updateAtrr.TableName, updateAtrr, actionValue, nil, oldRes, txn)
 		return res, updateAtrr.PrimaryKeyMap, mut, err
 	default:
 	}

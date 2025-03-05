@@ -15,12 +15,16 @@
 package v1
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
+	"cloud.google.com/go/spanner"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/cloudspannerecosystem/dynamodb-adapter/models"
+	"github.com/cloudspannerecosystem/dynamodb-adapter/storage"
+	"github.com/stretchr/testify/mock"
 	"gopkg.in/go-playground/assert.v1"
 )
 
@@ -666,4 +670,402 @@ func TestParseActionValue(t *testing.T) {
 			}
 		})
 	}
+}
+
+// type mockServices struct {
+// 	getWithProjectionFunc   func(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, projection string, columns []string) (map[string]interface{}, error)
+// 	transactWriteDelFunc    func(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, conditionExpression string, n map[string]interface{}, expr map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error)
+// 	transactWritePutFunc    func(ctx context.Context, tableName string, m map[string]interface{}, expr map[string]interface{}, conditionExpression string, expressionAttributeMap map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error)
+// 	transactWriteAddFunc    func(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, conditionExpression string, m map[string]interface{}, expressionAttributeMap map[string]interface{}, expr map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error)
+// 	transactWriteRemoveFunc func(ctx context.Context, tableName string, updateAtrr models.UpdateAttr, actionValue string, expr map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error)
+// 	mayIReadOrWriteFunc     func(tableName string, isWrite bool, user string) bool
+// }
+
+// func (m *mockServices) GetWithProjection(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, projection string, columns []string) (map[string]interface{}, error) {
+// 	if m.getWithProjectionFunc != nil {
+// 		return m.getWithProjectionFunc(ctx, tableName, primaryKeyMap, projection, columns)
+// 	}
+// 	return nil, nil
+// }
+
+// func (m *mockServices) TransactWriteDel(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, conditionExpression string, n map[string]interface{}, expr map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+// 	if m.transactWriteDelFunc != nil {
+// 		return m.transactWriteDelFunc(ctx, tableName, primaryKeyMap, conditionExpression, n, expr, txn)
+// 	}
+// 	return nil, nil, nil
+// }
+
+// func (m *mockServices) TransactWritePut(ctx context.Context, tableName string, n map[string]interface{}, expr map[string]interface{}, conditionExpression string, expressionAttributeMap map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+// 	if m.transactWritePutFunc != nil {
+// 		return m.transactWritePutFunc(ctx, tableName, n, expr, conditionExpression, expressionAttributeMap, oldRes, txn)
+// 	}
+// 	return nil, nil, nil
+// }
+
+// func (m *mockServices) TransactWriteAdd(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, conditionExpression string, n map[string]interface{}, expressionAttributeMap map[string]interface{}, expr map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+// 	if m.transactWriteAddFunc != nil {
+// 		return m.transactWriteAddFunc(ctx, tableName, primaryKeyMap, conditionExpression, n, expressionAttributeMap, expr, oldRes, txn)
+// 	}
+// 	return nil, nil, nil
+// }
+
+// func (m *mockServices) TransactWriteRemove(ctx context.Context, tableName string, updateAtrr models.UpdateAttr, actionValue string, expr map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+// 	if m.transactWriteRemoveFunc != nil {
+// 		return m.transactWriteRemoveFunc(ctx, tableName, updateAtrr, actionValue, expr, oldRes, txn)
+// 	}
+// 	return nil, nil, nil
+// }
+// func (m *mockServices) MayIReadOrWrite(tableName string, isWrite bool, user string) bool {
+// 	if m.mayIReadOrWriteFunc != nil {
+// 		return m.mayIReadOrWriteFunc(tableName, isWrite, user)
+// 	}
+// 	return true // Default behavior if not mocked
+// }
+
+// func mockInitSpannerDriver() *spanner.Client {
+// 	return &spanner.Client{} // Replace with your mock client if needed
+// }
+
+// func TestTransactWriteUpdateExpression(t *testing.T) {
+// 	ctx := context.Background()
+// 	txn := &spanner.ReadWriteTransaction{}
+// 	mockSvc := &mockServices{
+// 		getWithProjectionFunc: func(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, projection string, columns []string) (map[string]interface{}, error) {
+// 			return map[string]interface{}{"id": 1, "name": "old"}, nil
+// 		},
+// 		transactWritePutFunc: func(ctx context.Context, tableName string, m map[string]interface{}, expr map[string]interface{}, conditionExpression string, expressionAttributeMap map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+// 			return map[string]interface{}{"id": 1, "name": "new"}, nil, nil
+// 		},
+// 		mayIReadOrWriteFunc: func(tableName string, isWrite bool, user string) bool {
+// 			return true
+// 		},
+// 	}
+
+// 	originalServices := services.GetServiceInstance()                // Get the actual service instance
+// 	defer func() { services.SetServiceInstance(originalServices) }() // Restore the original instance
+// 	services.SetServiceInstance(mockSvc)
+
+// 	updateAttr := models.UpdateAttr{
+// 		TableName:                "testTable",
+// 		PrimaryKeyMap:            map[string]interface{}{"id": 1},
+// 		UpdateExpression:         "SET #name = :newName",
+// 		ExpressionAttributeNames: map[string]string{"#name": "name"},
+// 		ExpressionAttributeMap:   map[string]interface{}{":newName": "new"},
+// 		ReturnValues:             "ALL_NEW",
+// 	}
+
+// 	result, _, _ := TransactWriteUpdateExpression(ctx, updateAttr, txn)
+
+// 	// assert.NoError(t, err)
+// 	// assert.NotNil(t, result)
+// 	assert.Equal(t, map[string]interface{}{"Attributes": map[string]interface{}{"id": 1, "name": "new"}}, result)
+
+// 	// updateAttr.ReturnValues = "ALL_OLD"
+// 	// result, _, err = TransactWriteUpdateExpression(ctx, updateAttr, txn)
+// 	// assert.NoError(t, err)
+// 	// assert.NotNil(t, result)
+// 	// assert.Equal(t, map[string]interface{}{"Attributes": map[string]interface{}{"id": 1, "name": "old"}}, result)
+
+// 	// updateAttr.ReturnValues = "UPDATED_NEW"
+// 	// result, _, err = TransactWriteUpdateExpression(ctx, updateAttr, txn)
+// 	// assert.NoError(t, err)
+// 	// assert.NotNil(t, result)
+// 	// assert.Equal(t, map[string]interface{}{"Attributes": map[string]interface{}{"name": "new"}}, result)
+
+// 	// updateAttr.ReturnValues = "UPDATED_OLD"
+// 	// result, _, err = TransactWriteUpdateExpression(ctx, updateAttr, txn)
+// 	// assert.NoError(t, err)
+// 	// assert.NotNil(t, result)
+// 	// assert.Equal(t, map[string]interface{}{"Attributes": map[string]interface{}{"name": "old"}}, result)
+
+// 	// updateAttr.ReturnValues = "NONE"
+// 	// result, _, err = TransactWriteUpdateExpression(ctx, updateAttr, txn)
+// 	// assert.NoError(t, err)
+// 	// assert.Nil(t, result)
+
+// }
+
+// func TestTransactWritePerformOperation(t *testing.T) {
+// 	ctx := context.Background()
+// 	txn := &spanner.ReadWriteTransaction{}
+// 	mockSvc := &mockServices{
+// 		transactWriteDelFunc: func(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, conditionExpression string, n map[string]interface{}, expr map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+// 			return map[string]interface{}{"id": 1}, nil, nil
+// 		},
+// 		transactWritePutFunc: func(ctx context.Context, tableName string, m map[string]interface{}, expr map[string]interface{}, conditionExpression string, expressionAttributeMap map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+// 			return map[string]interface{}{"id": 1, "name": "new"}, nil, nil
+// 		},
+// 		transactWriteAddFunc: func(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, conditionExpression string, m map[string]interface{}, expressionAttributeMap map[string]interface{}, expr map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+// 			return map[string]interface{}{"id": 1, "count": 2}, nil, nil
+// 		},
+// 		transactWriteRemoveFunc: func(ctx context.Context, tableName string, updateAtrr models.UpdateAttr, actionValue string, expr map[string]interface{}, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+// 			return map[string]interface{}{"id": 1}, nil, nil
+// 		},
+// 		mayIReadOrWriteFunc: func(tableName string, isWrite bool, user string) bool {
+// 			return true
+// 		},
+// 	}
+// 	originalServices := services.GetServiceInstance()                // Get the actual service instance
+// 	defer func() { services.SetServiceInstance(originalServices) }() // Restore the original instance
+// 	services.SetServiceInstance(mockSvc)
+
+// 	updateAttr := models.UpdateAttr{
+// 		TableName:                "testTable",
+// 		PrimaryKeyMap:            map[string]interface{}{"id": 1},
+// 		ExpressionAttributeNames: map[string]string{"#count": "count"},
+// 		ExpressionAttributeMap:   map[string]interface{}{":val": 1},
+// 	}
+
+// 	// Test DELETE
+// 	res, _, _, _ := TransactWritePerformOperation(ctx, "DELETE", "#count", updateAttr, nil, txn)
+// 	//assert.NoError(t, err)
+// 	assert.Equal(t, map[string]interface{}{"id": 1}, res)
+
+// 	// Test SET
+// 	updateAttr.UpdateExpression = "SET #count = :val"
+// 	res, _, _, _ = TransactWritePerformOperation(ctx, "SET", "#count = :val", updateAttr, nil, txn)
+// 	//assert.NoError(t, err)
+// 	assert.Equal(t, map[string]interface{}{"id": 1, "name": "new"}, res)
+
+// 	// Test ADD
+// 	updateAttr.UpdateExpression = "ADD #count :val"
+// 	res, _, _, _ = TransactWritePerformOperation(ctx, "ADD", "#count :val", updateAttr, nil, txn)
+// 	//assert.NoError(t, err)
+// 	assert.Equal(t, map[string]interface{}{"id": 1, "count": 2}, res)
+
+// 	// Test REMOVE
+// 	res, _, _, _ = TransactWritePerformOperation(ctx, "REMOVE", "#count", updateAttr, nil, txn)
+// 	//assert.NoError(t, err)
+// 	assert.Equal(t, map[string]interface{}{"id": 1}, res)
+// }
+
+type MockServices struct {
+	mock.Mock
+}
+type MockConfig struct{}
+
+// MayIReadOrWrite implements services.Service.
+func (m *MockServices) MayIReadOrWrite(tableName string, isWrite bool, user string) bool {
+	args := m.Called(tableName, isWrite, user)
+	return args.Bool(0)
+}
+
+func (m *MockServices) GetWithProjection(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, projectionExpression string, expressionAttributeNames map[string]string) (map[string]interface{}, error) {
+	args := m.Called(ctx, tableName, primaryKeyMap, projectionExpression, expressionAttributeNames)
+	return args.Get(0).(map[string]interface{}), args.Error(1)
+}
+func (m *MockConfig) GetTableConf(tableName string) (*models.TableConfig, error) {
+	return &models.TableConfig{ActualTable: tableName}, nil
+}
+
+func (m *MockServices) TransactWritePut(ctx context.Context, tableName string, putObj map[string]interface{}, expr *models.UpdateExpressionCondition, conditionExp string, expressionAttr, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	args := m.Called(ctx, tableName, putObj, expr, conditionExp, expressionAttr, oldRes, txn)
+	return args.Get(0).(map[string]interface{}), args.Get(1).(*spanner.Mutation), args.Error(2)
+}
+
+func (m *MockServices) TransactWriteAdd(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, conditionExpression string, mAttributes map[string]interface{}, expressionAttributeMap map[string]interface{}, expr *models.UpdateExpressionCondition, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	args := m.Called(ctx, tableName, primaryKeyMap, conditionExpression, mAttributes, expressionAttributeMap, expr, oldRes, txn)
+	return args.Get(0).(map[string]interface{}), args.Get(1).(*spanner.Mutation), args.Error(2)
+}
+
+func (m *MockServices) TransactWriteRemove(ctx context.Context, tableName string, updateAttr models.UpdateAttr, actionValue string, expr *models.UpdateExpressionCondition, oldRes map[string]interface{}, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	args := m.Called(ctx, tableName, updateAttr, actionValue, expr, oldRes, txn)
+	return args.Get(0).(map[string]interface{}), args.Get(1).(*spanner.Mutation), args.Error(2)
+}
+
+func (m *MockServices) TransactWriteDel(ctx context.Context, tableName string, primaryKeyMap map[string]interface{}, conditionExpression string, mAttributes map[string]interface{}, expr *models.UpdateExpressionCondition, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	args := m.Called(ctx, tableName, primaryKeyMap, conditionExpression, mAttributes, expr, txn)
+	return args.Get(0).(map[string]interface{}), args.Get(1).(*spanner.Mutation), args.Error(2)
+}
+func (m *MockStorage) SpannerTransactWritePut(ctx context.Context, tableName string, putObj map[string]interface{}, e *models.Eval, expr *models.UpdateExpressionCondition, txn *spanner.ReadWriteTransaction) (map[string]interface{}, *spanner.Mutation, error) {
+	return map[string]interface{}{"Name": "John"}, &spanner.Mutation{}, nil
+}
+
+func TestTransactWriteUpdateExpression(t *testing.T) {
+	ctx := context.Background()
+	mockTxn := &spanner.ReadWriteTransaction{} // Mock transaction
+	updateAttr := models.UpdateAttr{
+		TableName:                "TestTable",
+		PrimaryKeyMap:            map[string]interface{}{"id": 1},
+		UpdateExpression:         "SET #name = :newName",
+		ConditionExpression:      "#age > :minAge",
+		ExpressionAttributeNames: map[string]string{"#name": "Name", "#age": "Age"},
+		ExpressionAttributeMap:   map[string]interface{}{":newName": "John", ":minAge": 18},
+		ReturnValues:             "ALL_NEW",
+	}
+	mockStorageInstance := &storage.Storage{}
+	storage.SetStorageInstance(mockStorageInstance)
+	mockSvc := new(MockServices)
+
+	mockSvc.On("GetWithProjection", ctx, updateAttr.TableName, updateAttr.PrimaryKeyMap, "", mock.Anything).
+		Return(map[string]interface{}{"Name": "Doe", "Age": 20}, nil)
+
+	mockSvc.On("TransactWritePut", ctx, updateAttr.TableName, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mockTxn).
+		Return(map[string]interface{}{
+			"Name": map[string]interface{}{
+				"S": "John",
+			},
+		}, &spanner.Mutation{}, nil)
+
+	result, mut, err := TransactWriteUpdateExpression(ctx, updateAttr, mockTxn, mockSvc)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if mut == nil {
+		t.Fatalf("Expected mutation, got nil")
+	}
+
+	expected := map[string]interface{}{
+		"Attributes": map[string]interface{}{
+			"Name": map[string]interface{}{
+				"S": map[string]interface{}{
+					"S": "John",
+				},
+			},
+		},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected result %+v, got %+v", expected, result)
+	}
+
+	mockSvc.AssertExpectations(t)
+}
+
+func TestTransactWriteUpdateAddExpression(t *testing.T) {
+	ctx := context.Background()
+	mockTxn := &spanner.ReadWriteTransaction{} // Mock transaction
+	updateAttr := models.UpdateAttr{
+		TableName:                "TestTable",
+		PrimaryKeyMap:            map[string]interface{}{"id": 1},
+		UpdateExpression:         "ADD #name = :newName",
+		ConditionExpression:      "#age > :minAge",
+		ExpressionAttributeNames: map[string]string{"#name": "Name", "#age": "Age"},
+		ExpressionAttributeMap:   map[string]interface{}{":newName": "John", ":minAge": 18},
+		ReturnValues:             "ALL_NEW",
+	}
+	mockStorageInstance := &storage.Storage{}
+	storage.SetStorageInstance(mockStorageInstance)
+	mockSvc := new(MockServices)
+
+	mockSvc.On("GetWithProjection", ctx, updateAttr.TableName, updateAttr.PrimaryKeyMap, "", mock.Anything).
+		Return(map[string]interface{}{"Name": "Doe", "Age": 20}, nil)
+
+	mockSvc.On("TransactWriteAdd", ctx, updateAttr.TableName, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mockTxn).
+		Return(map[string]interface{}{"Age": 21}, &spanner.Mutation{}, nil)
+
+	result, mut, err := TransactWriteUpdateExpression(ctx, updateAttr, mockTxn, mockSvc)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if mut == nil {
+		t.Fatalf("Expected mutation, got nil")
+	}
+
+	expected := map[string]interface{}{
+		"Attributes": map[string]interface{}{
+			"Age": map[string]interface{}{
+				"N": "21",
+			},
+		},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected result %+v, got %+v", expected, result)
+	}
+
+	mockSvc.AssertExpectations(t)
+}
+
+func TestTransactWriteUpdateRemoveExpression(t *testing.T) {
+	ctx := context.Background()
+	mockTxn := &spanner.ReadWriteTransaction{} // Mock transaction
+	updateAttr := models.UpdateAttr{
+		TableName:                "TestTable",
+		PrimaryKeyMap:            map[string]interface{}{"id": 1},
+		UpdateExpression:         "Remove #name = :newName",
+		ConditionExpression:      "#age > :minAge",
+		ExpressionAttributeNames: map[string]string{"#name": "Name", "#age": "Age"},
+		ExpressionAttributeMap:   map[string]interface{}{":newName": "John", ":minAge": 18},
+		ReturnValues:             "ALL_NEW",
+	}
+	mockStorageInstance := &storage.Storage{}
+	storage.SetStorageInstance(mockStorageInstance)
+	mockSvc := new(MockServices)
+
+	mockSvc.On("GetWithProjection", ctx, updateAttr.TableName, updateAttr.PrimaryKeyMap, "", mock.Anything).
+		Return(map[string]interface{}{"Name": "Doe", "Age": 20}, nil)
+
+	mockSvc.On("TransactWriteRemove", ctx, updateAttr.TableName, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mockTxn).
+		Return(map[string]interface{}{"Name": nil}, &spanner.Mutation{}, nil)
+
+	result, mut, err := TransactWriteUpdateExpression(ctx, updateAttr, mockTxn, mockSvc)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if mut == nil {
+		t.Fatalf("Expected mutation, got nil")
+	}
+
+	expected := map[string]interface{}{
+		"Attributes": map[string]interface{}{
+			"Name": map[string]interface{}{
+				"NULL": true,
+			},
+		},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected result %+v, got %+v", expected, result)
+	}
+
+	mockSvc.AssertExpectations(t)
+}
+
+func TestTransactWriteUpdateDeleteExpression(t *testing.T) {
+	ctx := context.Background()
+	mockTxn := &spanner.ReadWriteTransaction{} // Mock transaction
+	updateAttr := models.UpdateAttr{
+		TableName:                "TestTable",
+		PrimaryKeyMap:            map[string]interface{}{"id": 1},
+		UpdateExpression:         "Delete #name = :newName",
+		ConditionExpression:      "#age > :minAge",
+		ExpressionAttributeNames: map[string]string{"#name": "Name", "#age": "Age"},
+		ExpressionAttributeMap:   map[string]interface{}{":newName": "John", ":minAge": 18},
+		ReturnValues:             "ALL_OLD",
+	}
+	mockStorageInstance := &storage.Storage{}
+	storage.SetStorageInstance(mockStorageInstance)
+	mockSvc := new(MockServices)
+
+	mockSvc.On("GetWithProjection", ctx, updateAttr.TableName, updateAttr.PrimaryKeyMap, "", mock.Anything).
+		Return(map[string]interface{}{"Name": "Doe", "Age": 20}, nil)
+
+	mockSvc.On("TransactWriteDel", ctx, updateAttr.TableName, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mockTxn).
+		Return(map[string]interface{}{"Deleted": true}, &spanner.Mutation{}, nil)
+
+	result, mut, err := TransactWriteUpdateExpression(ctx, updateAttr, mockTxn, mockSvc)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if mut == nil {
+		t.Fatalf("Expected mutation, got nil")
+	}
+
+	expected := map[string]interface{}{
+		"Attributes": map[string]interface{}{ // Added "Attributes" level
+			"Name": map[string]interface{}{
+				"S": "Doe",
+			},
+			"Age": map[string]interface{}{
+				"N": "20",
+			},
+		},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected result %+v, got %+v", expected, result)
+	}
+
+	mockSvc.AssertExpectations(t)
 }
