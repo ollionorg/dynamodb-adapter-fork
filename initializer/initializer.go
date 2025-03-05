@@ -33,6 +33,5 @@ func InitAll(filepath string) error {
 		return err
 	}
 	services.StartConfigManager()
-	services.InitStream()
 	return nil
 }
