@@ -695,7 +695,7 @@ func ExecuteStatement(c *gin.Context) {
 	} else {
 		execStmt.TableName = extractTableName(execStmt.Statement)
 		for _, val := range execStmt.Parameters {
-			execStmt.AttrParams = append(execStmt.AttrParams, convertFrom(val, execStmt.TableName))
+			execStmt.AttrParams = append(execStmt.AttrParams, convertFrom(val, execStmt.TableName, 1))
 		}
 		res, err := services.ExecuteStatement(c.Request.Context(), execStmt)
 		if err == nil {
