@@ -703,7 +703,6 @@ func (h *APIHandler) TransactWriteItems(c *gin.Context) {
 	}
 	storageInstance := storage.GetStorageInstance()
 	spannerClient, _ := storageInstance.GetSpannerClient()
-	fmt.Println("spannerClient", spannerClient)
 	ctx := context.Background()
 	var resp models.TransactWriteItemsOutput
 	var resultItems []map[string]interface{}
