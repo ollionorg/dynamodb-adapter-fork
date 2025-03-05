@@ -57,7 +57,7 @@ func (s Storage) SpannerBatchGet(ctx context.Context, tableName string, pKeys, s
 			return nil, errors.New("ResourceNotFoundException", tableName)
 		}
 	}
-	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(tableName)]
+	colDDL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(tableName)]
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", tableName)
 	}
@@ -74,7 +74,7 @@ func (s Storage) SpannerBatchGet(ctx context.Context, tableName string, pKeys, s
 			}
 			return nil, errors.New("ValidationException", err)
 		}
-		singleRow, err := parseRow(r, colDLL)
+		singleRow, err := parseRow(r, colDDL)
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +100,7 @@ func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys 
 			return nil, errors.New("ResourceNotFoundException", tableName)
 		}
 	}
-	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(tableName)]
+	colDDL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(tableName)]
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", tableName)
 	}
@@ -111,13 +111,13 @@ func (s Storage) SpannerGet(ctx context.Context, tableName string, pKeys, sKeys 
 		return nil, errors.New("ResourceNotFoundException", tableName, key, err)
 	}
 
-	return parseRow(row, colDLL)
+	return parseRow(row, colDDL)
 }
 
 // ExecuteSpannerQuery - this will execute query on spanner database
 func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []string, isCountQuery bool, stmt spanner.Statement) ([]map[string]interface{}, error) {
 
-	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+	colDDL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
 
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
@@ -145,7 +145,7 @@ func (s Storage) ExecuteSpannerQuery(ctx context.Context, table string, cols []s
 			allRows = append(allRows, singleRow)
 			break
 		}
-		singleRow, err := parseRow(r, colDLL)
+		singleRow, err := parseRow(r, colDDL)
 		if err != nil {
 			return nil, err
 		}
@@ -285,7 +285,7 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 	if err != nil {
 		return nil, err
 	}
-	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+	colDDL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
 	}
@@ -337,7 +337,7 @@ func (s Storage) SpannerAdd(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return errors.New("ResourceNotFoundException", err)
 		}
-		rs, err := parseRow(r, colDLL)
+		rs, err := parseRow(r, colDDL)
 		if err != nil {
 			return err
 		}
@@ -429,7 +429,7 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 	if err != nil {
 		return err
 	}
-	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+	colDDL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
 	if !ok {
 		return errors.New("ResourceNotFoundException", table)
 	}
@@ -484,7 +484,7 @@ func (s Storage) SpannerDel(ctx context.Context, table string, m map[string]inte
 		if err != nil {
 			return errors.New("ResourceNotFoundException", err)
 		}
-		rs, err := parseRow(r, colDLL)
+		rs, err := parseRow(r, colDDL)
 		if err != nil {
 			return err
 		}
@@ -1331,7 +1331,7 @@ func (s Storage) TransactWriteSpannerDel(ctx context.Context, table string, m ma
 	if err != nil {
 		return nil, err
 	}
-	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+	colDDL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
 	if !ok {
 		return nil, errors.New("ResourceNotFoundException", table)
 	}
@@ -1363,7 +1363,6 @@ func (s Storage) TransactWriteSpannerDel(ctx context.Context, table string, m ma
 	} else {
 		key = spanner.Key{pValue}
 	}
-	//_, err = s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 	tmpMap := map[string]interface{}{}
 	for k, v := range m {
 		tmpMap[k] = v
@@ -1380,7 +1379,7 @@ func (s Storage) TransactWriteSpannerDel(ctx context.Context, table string, m ma
 	if err != nil {
 		return nil, errors.New("ResourceNotFoundException", err)
 	}
-	rs, err := parseRow(r, colDLL)
+	rs, err := parseRow(r, colDDL)
 	if err != nil {
 		return nil, err
 	}
@@ -1435,11 +1434,6 @@ func (s Storage) TransactWriteSpannerDel(ctx context.Context, table string, m ma
 		}
 	}
 	mutation := spanner.InsertOrUpdateMap(table, tmpMap)
-	// err = t.BufferWrite([]*spanner.Mutation{mutation})
-	// if err != nil {
-	// 	return errors.New("ResourceNotFoundException", err)
-	// }
-	// return nil
 
 	return mutation, err
 }
@@ -1449,7 +1443,7 @@ func (s Storage) TransactWriteSpannerAdd(ctx context.Context, table string, m ma
 	if err != nil {
 		return nil, nil, err
 	}
-	colDLL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
+	colDDL, ok := models.TableDDL[utils.ChangeTableNameForSpanner(table)]
 	if !ok {
 		return nil, nil, errors.New("ResourceNotFoundException", table)
 	}
@@ -1482,7 +1476,7 @@ func (s Storage) TransactWriteSpannerAdd(ctx context.Context, table string, m ma
 		key = spanner.Key{pValue}
 	}
 	updatedObj := map[string]interface{}{}
-	//_, err = s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
+
 	tmpMap := map[string]interface{}{}
 	for k, v := range m1 {
 		tmpMap[k] = v
@@ -1499,7 +1493,7 @@ func (s Storage) TransactWriteSpannerAdd(ctx context.Context, table string, m ma
 	if err != nil {
 		return nil, nil, errors.New("ResourceNotFoundException", err)
 	}
-	rs, err := parseRow(r, colDLL)
+	rs, err := parseRow(r, colDDL)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1611,7 +1605,6 @@ func (s Storage) TransactWriteSpannerAdd(ctx context.Context, table string, m ma
 // The colsToRemove parameter should contain the names of the columns to be removed.
 func (s Storage) TransactWriteSpannerRemove(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition, colsToRemove []string, txn *spanner.ReadWriteTransaction) (*spanner.Mutation, error) {
 
-	//_, err := s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
 	tmpMap := map[string]interface{}{}
 	for k, v := range m {
 		tmpMap[k] = v
@@ -1633,7 +1626,7 @@ func (s Storage) TransactWriteSpannerRemove(ctx context.Context, table string, m
 }
 
 func (s Storage) TransactWriteSpannerDelete(ctx context.Context, table string, m map[string]interface{}, eval *models.Eval, expr *models.UpdateExpressionCondition, txn *spanner.ReadWriteTransaction) (*spanner.Mutation, error) {
-	//	_, err := s.getSpannerClient(table).ReadWriteTransaction(ctx, func(ctx context.Context, t *spanner.ReadWriteTransaction) error {
+
 	tmpMap := map[string]interface{}{}
 	for k, v := range m {
 		tmpMap[k] = v

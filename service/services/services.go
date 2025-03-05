@@ -69,7 +69,7 @@ func GetServiceInstance() Service {
 		storageInstance := storage.GetStorageInstance()
 		spannerClient, err := storageInstance.GetSpannerClient()
 		if err != nil {
-			//logger.LogErrorf("Failed to initialize Spanner client: %v", err)
+			logger.LogError("Failed to initialize Spanner client: %v", err)
 			panic(err)
 		}
 
