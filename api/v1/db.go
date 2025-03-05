@@ -677,6 +677,19 @@ func batchUpdateItems(con context.Context, batchMetaUpdate models.BatchMetaUpdat
 	return nil
 }
 
+// ExecuteStatement handles the API endpoint for executing PartiQL statements on a specified DynamoDB table.
+// It processes the incoming HTTP request, extracts the JSON body into an ExecuteStatement model,
+// and performs necessary transformations before calling the service to execute the statement.
+//
+// Parameters:
+// - c: The Gin context, which provides methods for handling HTTP requests and responses.
+//
+// The function handles:
+// - Tracing using OpenTracing for request performance tracking.
+// - JSON binding and validation of the request body into the ExecuteStatement structure.
+// - Extracting the table name from the provided statement and converting parameter values accordingly.
+// - Executing the statement through a service call and managing the response, including changing the response format as needed.
+// - Error handling for various stages of execution.
 func ExecuteStatement(c *gin.Context) {
 	defer PanicHandler(c)
 	defer c.Request.Body.Close()
